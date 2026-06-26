@@ -33,7 +33,10 @@ services:
       retries: 3
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        - VITE_SKIP_ONBOARDING=true
     ports:
       - "3000:80"
     depends_on:

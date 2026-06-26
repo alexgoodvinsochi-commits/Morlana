@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "http://localhost:3000"
     LLM_FREE_MODEL: str = "mimo-v2-flash"
     LLM_PREMIUM_MODEL: str = "mimo-v2-flash"
+    SKIP_ONBOARDING: bool = True
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

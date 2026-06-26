@@ -74,9 +74,9 @@ try {
     exit 1
 }
 
-# Запуск ngrok
-Write-Host "  Запуск ngrok http 8000..." -ForegroundColor Yellow
-Start-Process "C:\tools\ngrok.exe" -ArgumentList "http", "8000"
+# Запуск ngrok (фронтенд на :3000, nginx проксирует /api/ на backend:8000)
+Write-Host "  Запуск ngrok http 3000..." -ForegroundColor Yellow
+Start-Process "C:\tools\ngrok.exe" -ArgumentList "http", "3000"
 Start-Sleep -Seconds 3
 $ngrokRunning = Get-Process ngrok -ErrorAction SilentlyContinue
 if ($ngrokRunning) {

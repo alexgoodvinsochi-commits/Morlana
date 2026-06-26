@@ -4,10 +4,8 @@ import Onboarding from './components/Onboarding';
 import Greeting from './components/Greeting';
 import TarotDraw from './components/TarotDraw';
 import Chat from './components/Chat';
-import Paywall from './components/Paywall';
-import { apiGet } from './api/client';
 
-type Screen = 'onboarding' | 'greeting' | 'draw' | 'chat' | 'paywall';
+type Screen = 'onboarding' | 'greeting' | 'draw' | 'chat';
 
 interface UserData {
   zodiac_sign: string;
@@ -51,8 +49,9 @@ function App() {
   const { initData } = useTelegram();
   const [state, setState] = useState<AppState>(() => {
     const saved = loadState();
+    const skipOnboarding = import.meta.env.VITE_SKIP_ONBOARDING === 'true';
     return saved || {
-      screen: 'onboarding',
+      screen: skipOnboarding ? 'draw' : 'onboarding',
       userData: null,
       sessionId: crypto.randomUUID(),
       layoutType: '3_cards',
@@ -73,24 +72,12 @@ function App() {
   };
 
   const handleDraw = async (drawnCards: number[], type: string) => {
-    try {
-      const access = await apiGet<{ has_access: boolean; free_requests_left: number }>(
-        '/api/v1/tarot/check-access',
-        initData,
-      );
-      if (!access.has_access) {
-        setState((prev) => ({ ...prev, screen: 'paywall' }));
-        return;
-      }
-      setState((prev) => ({
-        ...prev,
-        cards: drawnCards,
-        layoutType: type,
-        screen: 'chat',
-      }));
-    } catch {
-      setState((prev) => ({ ...prev, screen: 'paywall' }));
-    }
+    setState((prev) => ({
+      ...prev,
+      cards: drawnCards,
+      layoutType: type,
+      screen: 'chat',
+    }));
   };
 
   const handleNewReading = () => {
@@ -129,10 +116,6 @@ function App() {
           cards={state.cards}
           onNewReading={handleNewReading}
         />
-      )}
-
-      {state.screen === 'paywall' && (
-        <Paywall freeRequestsLeft={state.userData?.free_requests_left ?? 0} />
       )}
     </div>
   );

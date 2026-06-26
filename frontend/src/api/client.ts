@@ -19,10 +19,6 @@ export async function apiPost<T>(path: string, body: Record<string, unknown>, in
     body: JSON.stringify(body),
   });
 
-  if (res.status === 402) {
-    throw new Error('PAYWALL');
-  }
-
   if (!res.ok) {
     throw new Error(`API error: ${res.status}`);
   }
@@ -34,10 +30,6 @@ export async function apiGet<T>(path: string, initData?: string): Promise<T> {
   const url = buildUrl(path, initData);
 
   const res = await fetch(url);
-
-  if (res.status === 402) {
-    throw new Error('PAYWALL');
-  }
 
   if (!res.ok) {
     throw new Error(`API error: ${res.status}`);
@@ -60,10 +52,6 @@ export async function apiStream(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-
-  if (res.status === 402) {
-    throw new Error('PAYWALL');
-  }
 
   if (!res.ok) {
     throw new Error(`API error: ${res.status}`);

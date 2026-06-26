@@ -77,11 +77,6 @@ async def tarot_predict_stream(request: Request, req: PredictRequest, initData: 
         raise HTTPException(status_code=404, detail="User not found")
 
     is_premium = bool(user.subscription_ends_at and user.subscription_ends_at > datetime.now(timezone.utc))
-    if not is_premium:
-        if user.free_requests_left <= 0:
-            raise HTTPException(status_code=402, detail="Payment required")
-        user.free_requests_left -= 1
-        await db.commit()
 
     session_result = await db.execute(
         select(TarotSession)

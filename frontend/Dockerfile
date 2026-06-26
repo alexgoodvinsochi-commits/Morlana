@@ -1,5 +1,8 @@
 FROM node:20-alpine AS build
 
+ARG VITE_SKIP_ONBOARDING=true
+ENV VITE_SKIP_ONBOARDING=$VITE_SKIP_ONBOARDING
+
 WORKDIR /app
 
 COPY package.json package-lock.json ./

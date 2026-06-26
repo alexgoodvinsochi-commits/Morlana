@@ -1,4 +1,4 @@
-# Morlana — запуск всех сервисов
+﻿# Morlana — запуск всех сервисов
 # Использование: .\start.ps1
 
 $ErrorActionPreference = "Stop"
@@ -47,39 +47,42 @@ try {
     Write-Host "  Frontend не отвечает" -ForegroundColor Red
 }
 
-# 4. Ngrok (с проверкой VPN)
+# 4. Ngrok (с обязательной проверкой VPN)
 Write-Host "`n[4/4] Ngrok..." -ForegroundColor Yellow
+
+# Остановить старый ngrok (если есть) чтобы не было конфликтов портов
 $ngrokRunning = Get-Process ngrok -ErrorAction SilentlyContinue
 if ($ngrokRunning) {
-    Write-Host "  Ngrok уже запущен (PID $($ngrokRunning.Id))" -ForegroundColor Green
+    Write-Host "  Остановка старого ngrok (PID $($ngrokRunning.Id))..." -ForegroundColor Yellow
+    Stop-Process -Name ngrok -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+}
+
+# Обязательная проверка VPN
+Write-Host "  Проверка VPN..." -ForegroundColor Yellow
+try {
+    $ip = (Test-Connection ifconfig.me -Count 1 -ErrorAction Stop).Address.IPAddressToString
+    Write-Host "  Текущий IP: $ip"
+    if ($ip -eq "5.35.113.65") {
+        Write-Host "  ОШИБКА: VPN выключен! ngrok заблокирует этот IP." -ForegroundColor Red
+        Write-Host "  Включите VPN и повторите запуск." -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "  VPN активен (IP: $ip)" -ForegroundColor Green
+} catch {
+    Write-Host "  ОШИБКА: Не удалось определить IP. Проверьте VPN." -ForegroundColor Red
+    exit 1
+}
+
+# Запуск ngrok
+Write-Host "  Запуск ngrok http 8000..." -ForegroundColor Yellow
+Start-Process "C:\tools\ngrok.exe" -ArgumentList "http", "8000"
+Start-Sleep -Seconds 3
+$ngrokRunning = Get-Process ngrok -ErrorAction SilentlyContinue
+if ($ngrokRunning) {
+    Write-Host "  Ngrok запущен (PID $($ngrokRunning.Id))" -ForegroundColor Green
 } else {
-    # Проверка VPN
-    Write-Host "  Проверка VPN..." -ForegroundColor Yellow
-    try {
-        $ip = (Test-Connection ifconfig.me -Count 1 -ErrorAction Stop).Address.IPAddressToString
-        Write-Host "  Текущий IP: $ip"
-        if ($ip -eq "5.35.113.65") {
-            Write-Host "  ВНИМАНИЕ: VPN выключен! ngrok заблокирует этот IP." -ForegroundColor Red
-            Write-Host "  Включите VPN и перезапустите скрипт." -ForegroundColor Red
-            Write-Host "  Docker-сервисы продолжают работать без ngrok." -ForegroundColor Yellow
-            exit 0
-        }
-        Write-Host "  VPN активен (IP: $ip)" -ForegroundColor Green
-    } catch {
-        Write-Host "  Не удалось определить IP. Проверьте VPN вручную." -ForegroundColor Red
-        Write-Host "  Если VPN включён — запустите ngrok вручную: C:\tools\ngrok.exe http 8000" -ForegroundColor Yellow
-        exit 0
-    }
-    # Запуск ngrok
-    Write-Host "  Запуск ngrok http 8000..." -ForegroundColor Yellow
-    Start-Process "C:\tools\ngrok.exe" -ArgumentList "http", "8000"
-    Start-Sleep -Seconds 3
-    $ngrokRunning = Get-Process ngrok -ErrorAction SilentlyContinue
-    if ($ngrokRunning) {
-        Write-Host "  Ngrok запущен (PID $($ngrokRunning.Id))" -ForegroundColor Green
-    } else {
-        Write-Host "  Ngrok не запустился" -ForegroundColor Red
-    }
+    Write-Host "  Ngrok не запустился" -ForegroundColor Red
 }
 
 # Итого

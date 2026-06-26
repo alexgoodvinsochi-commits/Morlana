@@ -36,12 +36,32 @@ class TarotSession(Base):
         BigInteger, ForeignKey("users.telegram_id", ondelete="CASCADE")
     )
     status: Mapped[str] = mapped_column(String(50), default="active")
+    cycle_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
     user: Mapped["User"] = relationship(back_populates="sessions")
     messages: Mapped[list["ChatHistory"]] = relationship(back_populates="session")
+    readings: Mapped[list["ReadingCycle"]] = relationship(back_populates="session")
+
+
+class ReadingCycle(Base):
+    __tablename__ = "reading_cycles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    session_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("tarot_sessions.id", ondelete="CASCADE")
+    )
+    cycle_number: Mapped[int] = mapped_column(Integer)
+    question: Mapped[str] = mapped_column(Text)
+    card_id: Mapped[int] = mapped_column(Integer)
+    interpretation: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    session: Mapped["TarotSession"] = relationship(back_populates="readings")
 
 
 class ChatHistory(Base):

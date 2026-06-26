@@ -9,7 +9,7 @@ from alembic import context
 
 from config import settings
 from database import Base
-from models import User, TarotSession, ChatHistory
+from models import User, TarotSession, ChatHistory, ReadingCycle
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)

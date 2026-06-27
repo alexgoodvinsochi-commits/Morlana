@@ -5,6 +5,14 @@ from schemas.tarot import (
     DrawRequest,
     DrawResponse,
     PredictRequest,
+    ReadingAskRequest,
+    ReadingDrawRequest,
+    ReadingDrawResponse,
+    ReadingInterpretRequest,
+    ReadingStartRequest,
+    ReadingStartResponse,
+    ReadingStateResponse,
+    ReadingSynthesisRequest,
     SessionCloseRequest,
 )
 
@@ -15,5 +23,13 @@ __all__ = [
     "DrawRequest",
     "DrawResponse",
     "PredictRequest",
+    "ReadingAskRequest",
+    "ReadingDrawRequest",
+    "ReadingDrawResponse",
+    "ReadingInterpretRequest",
+    "ReadingStartRequest",
+    "ReadingStartResponse",
+    "ReadingStateResponse",
+    "ReadingSynthesisRequest",
     "SessionCloseRequest",
 ]

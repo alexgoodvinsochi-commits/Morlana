@@ -48,3 +48,45 @@ class PredictRequest(BaseModel):
 
 class SessionCloseRequest(BaseModel):
     session_id: str
+
+
+class ReadingStartRequest(BaseModel):
+    layout_type: str = "1_card"
+
+
+class ReadingStartResponse(BaseModel):
+    session_id: str
+    state: str
+
+
+class ReadingAskRequest(BaseModel):
+    session_id: str
+    question: str
+
+
+class ReadingDrawRequest(BaseModel):
+    session_id: str
+
+
+class ReadingDrawResponse(BaseModel):
+    card_id: int
+    card_name: str
+    state: str
+
+
+class ReadingInterpretRequest(BaseModel):
+    session_id: str
+
+
+class ReadingSynthesisRequest(BaseModel):
+    session_id: str
+
+
+class ReadingStateResponse(BaseModel):
+    session_id: str
+    state: str
+    cycle_count: int
+    max_cycles: int
+    cycles: list[dict]
+    current_question: str | None = None
+    current_card: int | None = None

@@ -248,7 +248,7 @@ async def stream_prediction(
         model=model,
         messages=messages,
         stream=True,
-        max_tokens=1024,
+        max_tokens=2048,
     )
 
     async for chunk in stream:

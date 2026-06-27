@@ -128,5 +128,5 @@ async def tarot_predict_stream(request: Request, req: PredictRequest, initData: 
             db.add(assistant_msg)
         yield "data: [DONE]\n\n"
 
-    sse_headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"}
+    sse_headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
     return StreamingResponse(event_stream(), media_type="text/event-stream", headers=sse_headers)

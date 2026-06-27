@@ -206,7 +206,7 @@ async def reading_interpret(
         await reading_service.complete_cycle(req.session_id)
         yield "data: [DONE]\n\n"
 
-    sse_headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"}
+    sse_headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
     return StreamingResponse(event_stream(), media_type="text/event-stream", headers=sse_headers)
 
 
@@ -244,7 +244,7 @@ async def reading_synthesis(
             yield f"data: {json.dumps({'text': chunk})}\n\n"
         yield "data: [DONE]\n\n"
 
-    sse_headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"}
+    sse_headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
     return StreamingResponse(event_stream(), media_type="text/event-stream", headers=sse_headers)
 
 

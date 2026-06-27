@@ -56,6 +56,9 @@ async def tarot_draw(req: DrawRequest, initData: str = ""):
     if not user_data:
         raise HTTPException(status_code=401, detail="Invalid Telegram data")
 
+    if req.count != 1:
+        raise HTTPException(status_code=501, detail="Only single-card draws are supported")
+
     cards = draw_cards(req.count)
     logger.info("Cards drawn: %s for user %s", cards, user_data.get("id"))
     return DrawResponse(cards=cards, layout_type=req.layout_type)

@@ -23,7 +23,6 @@ from schemas import (
 from services import (
     draw_cards,
     reading_service,
-    ReadingState,
     stream_prediction,
     validate_telegram_init_data,
 )

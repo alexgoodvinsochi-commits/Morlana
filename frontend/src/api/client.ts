@@ -71,7 +71,20 @@ export async function apiStream(
 
   while (true) {
     const { done, value } = await reader.read();
-    if (done) break;
+    if (done) {
+      if (buffer.startsWith('data: ')) {
+        const data = buffer.slice(6);
+        if (data === '[DONE]') {
+          onDone();
+          return;
+        }
+        try {
+          const parsed = JSON.parse(data);
+          onChunk(parsed.text);
+        } catch {}
+      }
+      break;
+    }
 
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split('\n');
@@ -91,4 +104,5 @@ export async function apiStream(
       }
     }
   }
+  onDone();
 }

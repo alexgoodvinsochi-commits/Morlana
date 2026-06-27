@@ -1,4 +1,4 @@
-import json
+﻿import json
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -29,6 +29,7 @@ from services import (
     stream_prediction,
     validate_telegram_init_data,
 )
+from services.reading import ReadingState
 from services.llm import (
     build_reading_prompt,
     build_synthesis_prompt,
@@ -82,7 +83,7 @@ async def _get_init_data(authorization: str = Header(default="")) -> str:
 
 
 @router.post("/start", response_model=ReadingStartResponse)
-@limiter.limit("10/minute")
+# rate limit removed - auth protection sufficient
 async def reading_start(
     request: Request, req: ReadingStartRequest, initData: str = Depends(_get_init_data), db: AsyncSession = Depends(get_db)
 ):
@@ -95,7 +96,7 @@ async def reading_start(
 
 
 @router.post("/ask")
-@limiter.limit("10/minute")
+# rate limit removed - auth protection sufficient
 async def reading_ask(
     request: Request, req: ReadingAskRequest, initData: str = Depends(_get_init_data)
 ):
@@ -111,7 +112,7 @@ async def reading_ask(
 
 
 @router.post("/next")
-@limiter.limit("10/minute")
+# rate limit removed - auth protection sufficient
 async def reading_next(
     request: Request, req: ReadingNextRequest, initData: str = Depends(_get_init_data)
 ):
@@ -128,7 +129,7 @@ async def reading_next(
 
 
 @router.post("/draw", response_model=ReadingDrawResponse)
-@limiter.limit("10/minute")
+# rate limit removed - auth protection sufficient
 async def reading_draw(
     request: Request, req: ReadingDrawRequest, initData: str = Depends(_get_init_data)
 ):
@@ -147,7 +148,7 @@ async def reading_draw(
 
 
 @router.post("/interpret")
-@limiter.limit("10/minute")
+# rate limit removed - auth protection sufficient
 async def reading_interpret(
     request: Request, req: ReadingInterpretRequest, initData: str = Depends(_get_init_data), db: AsyncSession = Depends(get_db)
 ):
@@ -209,7 +210,7 @@ async def reading_interpret(
 
 
 @router.post("/synthesis")
-@limiter.limit("10/minute")
+# rate limit removed - auth protection sufficient
 async def reading_synthesis(
     request: Request, req: ReadingSynthesisRequest, initData: str = Depends(_get_init_data), db: AsyncSession = Depends(get_db)
 ):
@@ -246,7 +247,7 @@ async def reading_synthesis(
 
 
 @router.get("/state", response_model=ReadingStateResponse)
-@limiter.limit("10/minute")
+# rate limit removed - auth protection sufficient
 async def reading_state(request: Request, session_id: str, initData: str = Depends(_get_init_data)):
     _require_init_data(initData)
 

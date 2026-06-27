@@ -1,4 +1,4 @@
-﻿import json
+import json
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -206,7 +206,8 @@ async def reading_interpret(
         await reading_service.complete_cycle(req.session_id)
         yield "data: [DONE]\n\n"
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    sse_headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"}
+    return StreamingResponse(event_stream(), media_type="text/event-stream", headers=sse_headers)
 
 
 @router.post("/synthesis")
@@ -243,7 +244,8 @@ async def reading_synthesis(
             yield f"data: {json.dumps({'text': chunk})}\n\n"
         yield "data: [DONE]\n\n"
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    sse_headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"}
+    return StreamingResponse(event_stream(), media_type="text/event-stream", headers=sse_headers)
 
 
 @router.get("/state", response_model=ReadingStateResponse)

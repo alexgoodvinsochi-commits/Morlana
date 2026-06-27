@@ -109,6 +109,26 @@ async def reading_ask(
     return {"session_id": req.session_id, "state": new_state.value}
 
 
+@router.post("/next")
+@limiter.limit("10/minute")
+async def reading_next(
+    request: Request, initData: str = Depends(_get_init_data), body: ReadingAskRequest = None
+):
+    _require_init_data(initData)
+    session_id = body.session_id if body else None
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id required")
+    state = await reading_service.get_state(session_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Reading not found")
+    if state != ReadingState.READY:
+        raise HTTPException(status_code=400, detail=f"Cannot start new cycle in state: {state.value}")
+
+    await reading_service.start_new_cycle(session_id)
+    new_state = await reading_service.get_state(session_id)
+    return {"session_id": session_id, "state": new_state.value}
+
+
 @router.post("/draw", response_model=ReadingDrawResponse)
 @limiter.limit("10/minute")
 async def reading_draw(

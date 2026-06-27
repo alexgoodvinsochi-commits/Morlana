@@ -44,6 +44,14 @@ class ReadingService:
     def _cycle_key(session_id: str) -> str:
         return f"{ReadingService._KEY_PREFIX}{session_id}:cycle"
 
+    @staticmethod
+    def _question_key(session_id: str) -> str:
+        return f"{ReadingService._KEY_PREFIX}{session_id}:question"
+
+    @staticmethod
+    def _card_key(session_id: str) -> str:
+        return f"{ReadingService._KEY_PREFIX}{session_id}:card"
+
     async def start(self, session_id: str) -> ReadingState:
         await redis_service.set(self._state_key(session_id), ReadingState.WAITING.value)
         await redis_service.set(self._cycle_key(session_id), 0)
@@ -110,6 +118,12 @@ class ReadingService:
     async def end(self, session_id: str) -> ReadingState:
         """ГОТОВО -> ЗАВЕРШЕНО"""
         return await self._transition(session_id, ReadingState.COMPLETED)
+
+    async def start_new_cycle(self, session_id: str) -> ReadingState:
+        """ГОТОВО -> ОЖИДАНИЕ (начало нового цикла)"""
+        await redis_service.delete(self._question_key(session_id))
+        await redis_service.delete(self._card_key(session_id))
+        return await self._transition(session_id, ReadingState.WAITING)
 
 
 reading_service = ReadingService()

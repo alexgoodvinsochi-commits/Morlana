@@ -168,6 +168,25 @@ export default function ReadingScreen({ initData, onExit }: Props) {
     await startReading();
   };
 
+  const handleNextCycle = async () => {
+    if (!reading || loading) return;
+    setLoading(true);
+    setError('');
+    setStreamText('');
+    try {
+      await apiPost(
+        '/api/v1/tarot/reading/next',
+        { session_id: reading.session_id },
+        initData,
+      );
+      await fetchState(reading.session_id);
+    } catch {
+      setError('Не удалось начать новый цикл.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (!reading && !error) {
     return (
       <div className="reading-screen">
@@ -291,7 +310,7 @@ export default function ReadingScreen({ initData, onExit }: Props) {
           {reading.state === 'ГОТОВО' && (
             <div className="cycle-complete-actions">
               {reading.cycle_count < reading.max_cycles && (
-                <button onClick={() => fetchState(reading.session_id)} disabled={loading}>
+                <button onClick={handleNextCycle} disabled={loading}>
                   Следующий цикл
                 </button>
               )}

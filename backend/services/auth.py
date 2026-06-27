@@ -61,8 +61,8 @@ def validate_telegram_init_data(init_data: str) -> dict | None:
         if hmac.compare_digest(calculated_hash, received_hash):
             return user_data
 
-        logger.warning("HMAC mismatch — returning user_data anyway for debug")
-        return user_data
+        logger.warning("HMAC mismatch")
+        return None
     except Exception as e:
         logger.error(f"HMAC validation error: {e}")
         return None

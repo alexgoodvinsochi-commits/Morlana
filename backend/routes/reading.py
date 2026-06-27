@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
+from main import limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
@@ -69,6 +70,7 @@ def _require_init_data(init_data: str) -> dict:
 
 
 @router.post("/start", response_model=ReadingStartResponse)
+@limiter.limit("10/minute")
 async def reading_start(
     req: ReadingStartRequest, initData: str = "", db: AsyncSession = Depends(get_db)
 ):
@@ -81,6 +83,7 @@ async def reading_start(
 
 
 @router.post("/ask")
+@limiter.limit("10/minute")
 async def reading_ask(
     req: ReadingAskRequest, initData: str = ""
 ):
@@ -96,6 +99,7 @@ async def reading_ask(
 
 
 @router.post("/draw", response_model=ReadingDrawResponse)
+@limiter.limit("10/minute")
 async def reading_draw(
     req: ReadingDrawRequest, initData: str = ""
 ):
@@ -114,6 +118,7 @@ async def reading_draw(
 
 
 @router.post("/interpret")
+@limiter.limit("10/minute")
 async def reading_interpret(
     request: Request, req: ReadingInterpretRequest, initData: str = "", db: AsyncSession = Depends(get_db)
 ):
@@ -175,6 +180,7 @@ async def reading_interpret(
 
 
 @router.post("/synthesis")
+@limiter.limit("10/minute")
 async def reading_synthesis(
     request: Request, req: ReadingSynthesisRequest, initData: str = "", db: AsyncSession = Depends(get_db)
 ):
@@ -211,6 +217,7 @@ async def reading_synthesis(
 
 
 @router.get("/state", response_model=ReadingStateResponse)
+@limiter.limit("10/minute")
 async def reading_state(session_id: str, initData: str = ""):
     _require_init_data(initData)
 

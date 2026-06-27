@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, Header
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
-from main import limiter
+from rate_limiter import limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
@@ -78,7 +78,7 @@ async def _get_init_data(authorization: str = Header(default="")) -> str:
 @router.post("/start", response_model=ReadingStartResponse)
 @limiter.limit("10/minute")
 async def reading_start(
-    req: ReadingStartRequest, initData: str = Depends(_get_init_data), db: AsyncSession = Depends(get_db)
+    request: Request, req: ReadingStartRequest, initData: str = Depends(_get_init_data), db: AsyncSession = Depends(get_db)
 ):
     await _get_user_from_init_data(initData, db)
     session_id = str(uuid.uuid4())
@@ -91,7 +91,7 @@ async def reading_start(
 @router.post("/ask")
 @limiter.limit("10/minute")
 async def reading_ask(
-    req: ReadingAskRequest, initData: str = Depends(_get_init_data)
+    request: Request, req: ReadingAskRequest, initData: str = Depends(_get_init_data)
 ):
     _require_init_data(initData)
     state = await reading_service.get_state(req.session_id)
@@ -107,7 +107,7 @@ async def reading_ask(
 @router.post("/draw", response_model=ReadingDrawResponse)
 @limiter.limit("10/minute")
 async def reading_draw(
-    req: ReadingDrawRequest, initData: str = Depends(_get_init_data)
+    request: Request, req: ReadingDrawRequest, initData: str = Depends(_get_init_data)
 ):
     _require_init_data(initData)
     state = await reading_service.get_state(req.session_id)
@@ -224,7 +224,7 @@ async def reading_synthesis(
 
 @router.get("/state", response_model=ReadingStateResponse)
 @limiter.limit("10/minute")
-async def reading_state(session_id: str, initData: str = Depends(_get_init_data)):
+async def reading_state(request: Request, session_id: str, initData: str = Depends(_get_init_data)):
     _require_init_data(initData)
 
     state = await reading_service.get_state(session_id)

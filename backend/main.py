@@ -4,9 +4,10 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
+
+from rate_limiter import limiter
 
 from config import settings
 from database import init_db
@@ -16,8 +17,6 @@ from routes import astrology_router, tarot_router, sessions_router, reading_rout
 logger = logging.getLogger(__name__)
 
 setup_logging()
-
-limiter = Limiter(key_func=get_remote_address)
 
 
 class UTF8JSONResponse(JSONResponse):

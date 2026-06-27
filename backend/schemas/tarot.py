@@ -64,6 +64,10 @@ class ReadingAskRequest(BaseModel):
     question: str
 
 
+class ReadingNextRequest(BaseModel):
+    session_id: str
+
+
 class ReadingDrawRequest(BaseModel):
     session_id: str
 

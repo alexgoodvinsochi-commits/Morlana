@@ -2,10 +2,9 @@ import { useState, useEffect } from 'react';
 import { useTelegram } from './hooks/useTelegram';
 import Onboarding from './components/Onboarding';
 import Greeting from './components/Greeting';
-import TarotDraw from './components/TarotDraw';
-import Chat from './components/Chat';
+import ReadingScreen from './components/ReadingScreen';
 
-type Screen = 'onboarding' | 'greeting' | 'draw' | 'chat';
+type Screen = 'onboarding' | 'greeting' | 'reading';
 
 interface UserData {
   zodiac_sign: string;
@@ -16,9 +15,6 @@ interface UserData {
 interface AppState {
   screen: Screen;
   userData: UserData | null;
-  sessionId: string;
-  layoutType: string;
-  cards: number[];
 }
 
 const STORAGE_KEY = 'morlana_state';
@@ -45,17 +41,15 @@ function saveState(state: AppState) {
   }
 }
 
+const SKIP_ONBOARDING = import.meta.env.VITE_SKIP_ONBOARDING === 'true';
+
 function App() {
   const { initData } = useTelegram();
   const [state, setState] = useState<AppState>(() => {
     const saved = loadState();
-    const skipOnboarding = import.meta.env.VITE_SKIP_ONBOARDING === 'true';
     return saved || {
-      screen: skipOnboarding ? 'draw' : 'onboarding',
+      screen: SKIP_ONBOARDING ? 'reading' : 'onboarding',
       userData: null,
-      sessionId: crypto.randomUUID(),
-      layoutType: '3_cards',
-      cards: [],
     };
   });
 
@@ -68,26 +62,11 @@ function App() {
   };
 
   const handleGreetingNext = () => {
-    setState((prev) => ({ ...prev, screen: 'draw' }));
+    setState((prev) => ({ ...prev, screen: 'reading' }));
   };
 
-  const handleDraw = async (drawnCards: number[], type: string) => {
-    setState((prev) => ({
-      ...prev,
-      cards: drawnCards,
-      layoutType: type,
-      screen: 'chat',
-    }));
-  };
-
-  const handleNewReading = () => {
-    setState({
-      screen: 'draw',
-      userData: state.userData,
-      sessionId: crypto.randomUUID(),
-      layoutType: '3_cards',
-      cards: [],
-    });
+  const handleExitReading = () => {
+    setState((prev) => ({ ...prev, screen: 'onboarding' }));
   };
 
   return (
@@ -104,18 +83,8 @@ function App() {
         />
       )}
 
-      {state.screen === 'draw' && (
-        <TarotDraw initData={initData} onDraw={handleDraw} />
-      )}
-
-      {state.screen === 'chat' && (
-        <Chat
-          initData={initData}
-          sessionId={state.sessionId}
-          layoutType={state.layoutType}
-          cards={state.cards}
-          onNewReading={handleNewReading}
-        />
+      {state.screen === 'reading' && (
+        <ReadingScreen initData={initData} onExit={handleExitReading} />
       )}
     </div>
   );

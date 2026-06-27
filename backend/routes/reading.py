@@ -9,6 +9,7 @@ from sqlalchemy import select
 from rate_limiter import limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from config import settings
 from database import get_db
 from models import User
 from schemas import (
@@ -70,6 +71,10 @@ def _require_init_data(init_data: str) -> dict:
 
 
 async def _get_init_data(authorization: str = Header(default="")) -> str:
+    if settings.DEV_MODE:
+        if not authorization.startswith("Bearer "):
+            return "dev"
+        return authorization[7:]
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
     return authorization[7:]

@@ -13,6 +13,7 @@ from config import settings
 from database import init_db
 from logging_config import setup_logging
 from routes import astrology_router, tarot_router, sessions_router, reading_router  # , payments_router
+from services.redis import redis_service
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,12 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Morlana backend...")
     await init_db()
     logger.info("Database initialized")
+    try:
+        await redis_service.connect()
+    except Exception as e:
+        logger.warning(f"Redis connection failed: {e}")
     yield
+    await redis_service.close()
     logger.info("Shutting down Morlana backend")
 
 

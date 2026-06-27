@@ -12,6 +12,21 @@ logger = logging.getLogger(__name__)
 def validate_telegram_init_data(init_data: str) -> dict | None:
     """Validate Telegram Mini App initData using HMAC-SHA256."""
     try:
+        if settings.DEV_MODE:
+            logger.info("DEV_MODE: skipping HMAC validation")
+            user_data = {}
+            for item in init_data.split("&"):
+                if not item:
+                    continue
+                parts = item.split("=", 1)
+                if len(parts) == 2:
+                    key, value = parts
+                    if key == "user":
+                        user_data = json.loads(unquote(value))
+            if not user_data:
+                user_data = {"id": 244265949, "first_name": "Dev", "username": "dev_user"}
+            return user_data
+
         user_data = {}
         for item in init_data.split("&"):
             if not item:

@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     LLM_PREMIUM_MODEL: str = "mimo-v2-flash"
     SKIP_ONBOARDING: bool = True
     REDIS_URL: str = "redis://localhost:6379/0"
+    DEV_MODE: bool = False
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

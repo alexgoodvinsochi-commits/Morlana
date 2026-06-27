@@ -1,21 +1,25 @@
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
-function buildUrl(path: string, initData?: string): string {
+function buildUrl(path: string): string {
   const base = API_BASE ? API_BASE.replace(/\/$/, '') : window.location.origin;
   const sep = path.startsWith('/') ? '' : '/';
-  let url = base + sep + path;
+  return base + sep + path;
+}
+
+function buildHeaders(initData?: string): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (initData) {
-    url += (url.includes('?') ? '&' : '?') + 'initData=' + encodeURIComponent(initData);
+    headers['Authorization'] = `Bearer ${initData}`;
   }
-  return url;
+  return headers;
 }
 
 export async function apiPost<T>(path: string, body: Record<string, unknown>, initData?: string): Promise<T> {
-  const url = buildUrl(path, initData);
+  const url = buildUrl(path);
 
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: buildHeaders(initData),
     body: JSON.stringify(body),
   });
 
@@ -27,9 +31,11 @@ export async function apiPost<T>(path: string, body: Record<string, unknown>, in
 }
 
 export async function apiGet<T>(path: string, initData?: string): Promise<T> {
-  const url = buildUrl(path, initData);
+  const url = buildUrl(path);
 
-  const res = await fetch(url);
+  const res = await fetch(url, {
+    headers: buildHeaders(initData),
+  });
 
   if (!res.ok) {
     throw new Error(`API error: ${res.status}`);
@@ -45,11 +51,11 @@ export async function apiStream(
   onChunk: (text: string) => void,
   onDone: () => void,
 ): Promise<void> {
-  const url = buildUrl(path, initData);
+  const url = buildUrl(path);
 
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: buildHeaders(initData),
     body: JSON.stringify(body),
   });
 

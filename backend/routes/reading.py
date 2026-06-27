@@ -3,7 +3,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Header
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from main import limiter
@@ -69,10 +69,16 @@ def _require_init_data(init_data: str) -> dict:
     return user_data
 
 
+async def _get_init_data(authorization: str = Header(default="")) -> str:
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+    return authorization[7:]
+
+
 @router.post("/start", response_model=ReadingStartResponse)
 @limiter.limit("10/minute")
 async def reading_start(
-    req: ReadingStartRequest, initData: str = "", db: AsyncSession = Depends(get_db)
+    req: ReadingStartRequest, initData: str = Depends(_get_init_data), db: AsyncSession = Depends(get_db)
 ):
     await _get_user_from_init_data(initData, db)
     session_id = str(uuid.uuid4())
@@ -85,7 +91,7 @@ async def reading_start(
 @router.post("/ask")
 @limiter.limit("10/minute")
 async def reading_ask(
-    req: ReadingAskRequest, initData: str = ""
+    req: ReadingAskRequest, initData: str = Depends(_get_init_data)
 ):
     _require_init_data(initData)
     state = await reading_service.get_state(req.session_id)
@@ -101,7 +107,7 @@ async def reading_ask(
 @router.post("/draw", response_model=ReadingDrawResponse)
 @limiter.limit("10/minute")
 async def reading_draw(
-    req: ReadingDrawRequest, initData: str = ""
+    req: ReadingDrawRequest, initData: str = Depends(_get_init_data)
 ):
     _require_init_data(initData)
     state = await reading_service.get_state(req.session_id)
@@ -120,7 +126,7 @@ async def reading_draw(
 @router.post("/interpret")
 @limiter.limit("10/minute")
 async def reading_interpret(
-    request: Request, req: ReadingInterpretRequest, initData: str = "", db: AsyncSession = Depends(get_db)
+    request: Request, req: ReadingInterpretRequest, initData: str = Depends(_get_init_data), db: AsyncSession = Depends(get_db)
 ):
     user = await _get_user_from_init_data(initData, db)
 
@@ -182,7 +188,7 @@ async def reading_interpret(
 @router.post("/synthesis")
 @limiter.limit("10/minute")
 async def reading_synthesis(
-    request: Request, req: ReadingSynthesisRequest, initData: str = "", db: AsyncSession = Depends(get_db)
+    request: Request, req: ReadingSynthesisRequest, initData: str = Depends(_get_init_data), db: AsyncSession = Depends(get_db)
 ):
     user = await _get_user_from_init_data(initData, db)
 
@@ -218,7 +224,7 @@ async def reading_synthesis(
 
 @router.get("/state", response_model=ReadingStateResponse)
 @limiter.limit("10/minute")
-async def reading_state(session_id: str, initData: str = ""):
+async def reading_state(session_id: str, initData: str = Depends(_get_init_data)):
     _require_init_data(initData)
 
     state = await reading_service.get_state(session_id)

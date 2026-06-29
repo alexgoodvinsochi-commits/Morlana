@@ -128,6 +128,9 @@ export default function ReadingScreen({ initData, onExit }: Props) {
           setLoading(false);
           fetchState(reading.session_id);
         },
+        (cleaned) => {
+          setStreamText(cleaned);
+        },
       );
     } catch {
       setError('Не удалось получить толкование.');
@@ -152,6 +155,9 @@ export default function ReadingScreen({ initData, onExit }: Props) {
         () => {
           setLoading(false);
           fetchState(reading.session_id);
+        },
+        (cleaned) => {
+          setSynthesisText(cleaned);
         },
       );
     } catch {

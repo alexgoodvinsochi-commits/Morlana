@@ -113,7 +113,7 @@ def clean_llm_output(text: str) -> str:
     text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
     text = re.sub(r'[*_`]', '', text)
     text = re.sub(r'#{1,6}\s*', '', text)
-    text = re.sub(r'[^\u0400-\u04FF\u0000-\u007F \t\n\r.,!?;:\-\u2012\u2013\u2014()\"\'«»/\u00A0\u2000-\u200B\u202F\u205F\u3000]', '', text)
+    text = re.sub(r'[^\u0400-\u04FF\u0000-\u007F\u00A0 \t\n\r.,!?;:\-\u2012\u2013\u2014()\"\'«»/]', '', text)
     text = re.sub(r' {2,}', ' ', text)
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()

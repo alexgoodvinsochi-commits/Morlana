@@ -33,6 +33,7 @@ from services.reading import ReadingState
 from services.llm import (
     build_reading_prompt,
     build_synthesis_prompt,
+    clean_llm_output,
     get_card_name,
 )
 from services.redis import redis_service
@@ -193,17 +194,19 @@ async def reading_interpret(
             full_response.append(chunk)
             yield f"data: {json.dumps({'text': chunk})}\n\n"
 
-        answer = "".join(full_response)
+        raw_answer = "".join(full_response)
+        cleaned_answer = clean_llm_output(raw_answer)
 
         cycle_data = await redis_service.get(_cycle_data_key(req.session_id)) or []
         cycle_data.append({
             "cards": cards,
             "question": question,
-            "answer": answer,
+            "answer": cleaned_answer,
         })
         await redis_service.set(_cycle_data_key(req.session_id), cycle_data)
 
         await reading_service.complete_cycle(req.session_id)
+        yield f"data: {json.dumps({'cleaned': cleaned_answer})}\n\n"
         yield "data: [DONE]\n\n"
 
     sse_headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
@@ -234,6 +237,7 @@ async def reading_synthesis(
     )
 
     async def event_stream():
+        full_response = []
         async for chunk in stream_prediction(
             cards=[],
             question="",
@@ -241,7 +245,12 @@ async def reading_synthesis(
             zodiac_sign=user.zodiac_sign,
             custom_messages=custom_messages,
         ):
+            full_response.append(chunk)
             yield f"data: {json.dumps({'text': chunk})}\n\n"
+
+        raw_answer = "".join(full_response)
+        cleaned_answer = clean_llm_output(raw_answer)
+        yield f"data: {json.dumps({'cleaned': cleaned_answer})}\n\n"
         yield "data: [DONE]\n\n"
 
     sse_headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}

@@ -50,6 +50,7 @@ export async function apiStream(
   initData: string,
   onChunk: (text: string) => void,
   onDone: () => void,
+  onCleaned?: (text: string) => void,
 ): Promise<void> {
   const url = buildUrl(path);
 
@@ -80,10 +81,15 @@ export async function apiStream(
         }
         try {
           const parsed = JSON.parse(data);
-          onChunk(parsed.text);
+          if (parsed.cleaned && onCleaned) {
+            onCleaned(parsed.cleaned);
+          } else if (parsed.text) {
+            onChunk(parsed.text);
+          }
         } catch {}
       }
-      break;
+      onDone();
+      return;
     }
 
     buffer += decoder.decode(value, { stream: true });
@@ -99,10 +105,13 @@ export async function apiStream(
         }
         try {
           const parsed = JSON.parse(data);
-          onChunk(parsed.text);
+          if (parsed.cleaned && onCleaned) {
+            onCleaned(parsed.cleaned);
+          } else if (parsed.text) {
+            onChunk(parsed.text);
+          }
         } catch {}
       }
     }
   }
-  onDone();
 }

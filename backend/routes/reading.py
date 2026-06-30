@@ -183,6 +183,8 @@ async def reading_interpret(
         cards=cards,
         question=question,
         user_name=user.real_name,
+        zodiac_sign=user.zodiac_sign,
+        birth_time=str(user.birth_time) if user.birth_time else None,
     )
 
     async def event_stream():
@@ -191,6 +193,8 @@ async def reading_interpret(
             cards=cards,
             question=question,
             user_name=user.real_name,
+            zodiac_sign=user.zodiac_sign,
+            birth_time=str(user.birth_time) if user.birth_time else None,
             is_premium=is_premium,
             custom_messages=custom_messages,
         ):
@@ -263,6 +267,7 @@ async def reading_synthesis(
     custom_messages = build_synthesis_prompt(
         cycles=cycles,
         user_name=user.real_name,
+        zodiac_sign=user.zodiac_sign,
     )
 
     async def event_stream():
@@ -271,6 +276,7 @@ async def reading_synthesis(
             cards=[],
             question="",
             user_name=user.real_name,
+            zodiac_sign=user.zodiac_sign,
             custom_messages=custom_messages,
         ):
             full_response.append(chunk)

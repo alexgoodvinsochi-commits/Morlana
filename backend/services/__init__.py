@@ -1,7 +1,7 @@
 from services.auth import validate_telegram_init_data
 from services.zodiac import get_zodiac_sign
 from services.tarot import draw_cards
-from services.llm import stream_prediction
+from services.llm import stream_prediction, generate_astro_greeting
 from services.reading import reading_service, ReadingState
 
 __all__ = [
@@ -9,6 +9,7 @@ __all__ = [
     "get_zodiac_sign",
     "draw_cards",
     "stream_prediction",
+    "generate_astro_greeting",
     "reading_service",
     "ReadingState",
 ]

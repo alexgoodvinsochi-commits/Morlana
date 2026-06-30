@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db
 from models import User
 from schemas import AstrologyBonusRequest, AstrologyBonusResponse
-from services import get_zodiac_sign, validate_telegram_init_data
+from services import generate_astro_greeting, get_zodiac_sign, validate_telegram_init_data
 
 logger = logging.getLogger(__name__)
 

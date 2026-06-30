@@ -6,8 +6,6 @@ __pycache__/
 venv/
 .git/
 .gitignore
-alembic/
-alembic.ini
 *.md
 .dockerignore
 Dockerfile

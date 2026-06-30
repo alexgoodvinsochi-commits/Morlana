@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useTelegram } from './hooks/useTelegram';
 import Onboarding from './components/Onboarding';
-import Greeting from './components/Greeting';
 import ReadingScreen from './components/ReadingScreen';
 
-type Screen = 'onboarding' | 'greeting' | 'reading';
+type Screen = 'onboarding' | 'reading';
 
 interface UserData {
   zodiac_sign: string;
@@ -47,6 +46,10 @@ function App() {
   const { initData } = useTelegram();
   const [state, setState] = useState<AppState>(() => {
     const saved = loadState();
+    if (saved && !SKIP_ONBOARDING && saved.screen === 'reading') {
+      localStorage.removeItem(STORAGE_KEY);
+      return { screen: 'onboarding', userData: null };
+    }
     return saved || {
       screen: SKIP_ONBOARDING ? 'reading' : 'onboarding',
       userData: null,
@@ -58,11 +61,7 @@ function App() {
   }, [state]);
 
   const handleOnboardingComplete = (data: UserData) => {
-    setState((prev) => ({ ...prev, userData: data, screen: 'greeting' }));
-  };
-
-  const handleGreetingNext = () => {
-    setState((prev) => ({ ...prev, screen: 'reading' }));
+    setState((prev) => ({ ...prev, userData: data, screen: 'reading' }));
   };
 
   const handleExitReading = () => {
@@ -73,14 +72,6 @@ function App() {
     <div className="app">
       {state.screen === 'onboarding' && (
         <Onboarding initData={initData} onComplete={handleOnboardingComplete} />
-      )}
-
-      {state.screen === 'greeting' && state.userData && (
-        <Greeting
-          zodiacSign={state.userData.zodiac_sign}
-          greeting={state.userData.greeting}
-          onNext={handleGreetingNext}
-        />
       )}
 
       {state.screen === 'reading' && (

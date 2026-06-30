@@ -6,50 +6,23 @@ interface Props {
   onComplete: (data: { zodiac_sign: string; greeting: string; free_requests_left: number }) => void;
 }
 
+type Step = 'welcome' | 'form';
+
 export default function Onboarding({ initData, onComplete }: Props) {
+  const [step, setStep] = useState<Step>('welcome');
   const [realName, setRealName] = useState('');
-  const [birthDate, setBirthDate] = useState('');
-  const [birthTime, setBirthTime] = useState('');
-  const [birthLocation, setBirthLocation] = useState('');
-  const [geoLoading, setGeoLoading] = useState(false);
+  const [gender, setGender] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleDetectLocation = () => {
-    if (!navigator.geolocation) {
-      setError('Геолокация не поддерживается');
-      return;
-    }
-    setGeoLoading(true);
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        try {
-          const { latitude, longitude } = position.coords;
-          const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=ru`
-          );
-          const data = await res.json();
-          const city = data.address?.city || data.address?.town || data.address?.village || data.address?.state || '';
-          const country = data.address?.country || '';
-          setBirthLocation(city ? `${city}, ${country}` : country);
-        } catch {
-          setError('Не удалось определить город');
-        } finally {
-          setGeoLoading(false);
-        }
-      },
-      () => {
-        setGeoLoading(false);
-        setError('Разрешите доступ к геолокации или введите город вручную');
-      },
-      { timeout: 10000 }
-    );
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!realName || !birthDate) {
-      setError('Заполните имя и дату рождения');
+    if (!realName.trim()) {
+      setError('Пожалуйста, введите ваше имя');
+      return;
+    }
+    if (!gender) {
+      setError('Пожалуйста, выберите пол');
       return;
     }
 
@@ -57,13 +30,14 @@ export default function Onboarding({ initData, onComplete }: Props) {
     setError('');
 
     try {
-      const data = await apiPost<{ zodiac_sign: string; greeting: string; free_requests_left: number }>('/api/v1/astrology/bonus', {
-        initData,
-        real_name: realName,
-        birth_date: birthDate,
-        birth_time: birthTime || null,
-        birth_location: birthLocation || null,
-      });
+      const data = await apiPost<{ zodiac_sign: string; greeting: string; free_requests_left: number }>(
+        '/api/v1/astrology/bonus',
+        {
+          initData,
+          real_name: realName.trim(),
+          gender,
+        },
+      );
       onComplete(data);
     } catch {
       setError('Ошибка сервера. Попробуйте позже.');
@@ -72,10 +46,22 @@ export default function Onboarding({ initData, onComplete }: Props) {
     }
   };
 
+  if (step === 'welcome') {
+    return (
+      <div className="onboarding">
+        <div className="onboarding-welcome">
+          <h1>Morlana</h1>
+          <p>ИИ-таролог, который поможет вам заглянуть за горизонт событий</p>
+          <button onClick={() => setStep('form')}>Начать расклад</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="onboarding">
-      <h1>Добро пожаловать в Morlana</h1>
-      <p>Расскажите о себе, чтобы получить персональный астро-разбор</p>
+      <h1>Расскажите о себе</h1>
+      <p>Чтобы расклад был точнее, расскажите немного о себе</p>
 
       <form onSubmit={handleSubmit}>
         <div className="field">
@@ -85,46 +71,34 @@ export default function Onboarding({ initData, onComplete }: Props) {
             value={realName}
             onChange={(e) => setRealName(e.target.value)}
             placeholder="Как к вам обращаться?"
+            autoFocus
           />
         </div>
 
         <div className="field">
-          <label>Дата рождения</label>
-          <input
-            type="date"
-            value={birthDate}
-            onChange={(e) => setBirthDate(e.target.value)}
-          />
-        </div>
-
-        <div className="field">
-          <label>Время рождения (необязательно)</label>
-          <input
-            type="time"
-            value={birthTime}
-            onChange={(e) => setBirthTime(e.target.value)}
-          />
-        </div>
-
-        <div className="field">
-          <label>Город рождения</label>
-          <div className="location-row">
-            <input
-              type="text"
-              value={birthLocation}
-              onChange={(e) => setBirthLocation(e.target.value)}
-              placeholder="Например: Москва"
-            />
-            <button type="button" className="geo-btn" onClick={handleDetectLocation} disabled={geoLoading}>
-              {geoLoading ? '...' : 'GPS'}
+          <label>Пол</label>
+          <div className="gender-options">
+            <button
+              type="button"
+              className={`gender-btn ${gender === 'female' ? 'selected' : ''}`}
+              onClick={() => setGender('female')}
+            >
+              Женский
+            </button>
+            <button
+              type="button"
+              className={`gender-btn ${gender === 'male' ? 'selected' : ''}`}
+              onClick={() => setGender('male')}
+            >
+              Мужской
             </button>
           </div>
         </div>
 
         {error && <p className="error">{error}</p>}
 
-        <button type="submit" disabled={loading}>
-          {loading ? 'Загрузка...' : 'Получить бонус'}
+        <button type="submit" disabled={loading} className="submit-btn">
+          {loading ? 'Загрузка...' : 'Начать расклад'}
         </button>
       </form>
     </div>

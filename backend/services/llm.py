@@ -114,7 +114,8 @@ def clean_llm_output(text: str) -> str:
     text = re.sub(r'[*_`]', '', text)
     text = re.sub(r'#{1,6}\s*', '', text)
     text = re.sub(r'[^\u0400-\u04FF\u0000-\u007F\u00A0 \t\n\r.,!?;:\-\u2012\u2013\u2014()\"\'«»/]', '', text)
-    text = re.sub(r' {2,}', ' ', text)
+    text = re.sub(r'([a-zA-Z])([\u0400-\u04FF])', r'\1 \2', text)
+    text = re.sub(r'([\u0400-\u04FF])([a-zA-Z])', r'\1 \2', text)
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()
 
@@ -285,25 +286,3 @@ async def generate_astro_greeting(
         f"Привет, {user_name}! Ты — {zodiac_sign}. Давай узнаем, что карты хотят тебе сказать."
     )
     return clean_llm_output(raw)
-
-    raw = response.choices[0].message.content or (
-        f"Привет, {user_name}! Ты — {zodiac_sign}. Давай узнаем, что карты хотят тебе сказать."
-    )
-    return clean_llm_output(raw)
-
-    time_note = f"Время рождения: {birth_time}." if birth_time else "Точное время рождения неизвестно."
-
-    messages = [
-        {"role": "system", "content": ASTRO_GREETING_PROMPT},
-        {"role": "user", "content": f"Имя: {user_name}\nЗнак зодиака: {zodiac_sign}\nДата рождения: {birth_date}\n{time_note}"},
-    ]
-
-    response = await client.chat.completions.create(
-        model=settings.LLM_FREE_MODEL,
-        messages=messages,
-        max_tokens=1024,
-    )
-
-    return response.choices[0].message.content or (
-        f"Привет, {user_name}! Ты — {zodiac_sign}. Давай узнаем, что карты хотят тебе сказать."
-    )

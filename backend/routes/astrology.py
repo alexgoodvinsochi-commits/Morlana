@@ -17,10 +17,8 @@ router = APIRouter(prefix="/api/v1/astrology", tags=["astrology"])
 
 @router.post("/bonus", response_model=AstrologyBonusResponse)
 async def astrology_bonus(req: AstrologyBonusRequest, db: AsyncSession = Depends(get_db)):
-    logger.info(f"astrology_bonus called: initData_len={len(req.initData)}, real_name={req.real_name}, birth_date={req.birth_date}")
-    logger.info(f"initData first 100 chars: {req.initData[:100]}")
+    logger.info(f"astrology_bonus called: real_name={req.real_name}, gender={req.gender}")
     user_data = validate_telegram_init_data(req.initData)
-    logger.info(f"HMAC validation result: user_data={user_data}")
     if not user_data:
         raise HTTPException(status_code=401, detail="Invalid Telegram data")
 
@@ -28,22 +26,25 @@ async def astrology_bonus(req: AstrologyBonusRequest, db: AsyncSession = Depends
     if not telegram_id:
         raise HTTPException(status_code=401, detail="User ID not found")
 
-    zodiac_sign = get_zodiac_sign(req.birth_date)
+    zodiac_sign = get_zodiac_sign(req.birth_date) if req.birth_date else None
 
     result = await db.execute(select(User).where(User.telegram_id == telegram_id))
     user = result.scalar_one_or_none()
 
     if user:
         user.real_name = req.real_name
-        user.birth_date = req.birth_date
-        user.birth_time = req.birth_time
-        user.zodiac_sign = zodiac_sign
-        user.birth_location = req.birth_location
+        user.gender = req.gender
+        if req.birth_date:
+            user.birth_date = req.birth_date
+            user.birth_time = req.birth_time
+            user.zodiac_sign = zodiac_sign
+            user.birth_location = req.birth_location
     else:
         user = User(
             telegram_id=telegram_id,
             username=user_data.get("username"),
             real_name=req.real_name,
+            gender=req.gender,
             birth_date=req.birth_date,
             birth_time=req.birth_time,
             zodiac_sign=zodiac_sign,
@@ -54,18 +55,14 @@ async def astrology_bonus(req: AstrologyBonusRequest, db: AsyncSession = Depends
 
     await db.commit()
 
-    logger.info(f"Generating greeting for {req.real_name}, zodiac={zodiac_sign}, location={req.birth_location}")
-    greeting = await generate_astro_greeting(
-        user_name=req.real_name,
-        zodiac_sign=zodiac_sign,
-        birth_date=str(req.birth_date),
-        birth_time=str(req.birth_time) if req.birth_time else None,
-        birth_location=req.birth_location,
+    greeting = (
+        f"Привет, {req.real_name}! "
+        f"Рада познакомиться. "
+        f"Давай начнём — задай свой первый вопрос картам."
     )
-    logger.info(f"Greeting generated: {len(greeting)} chars")
 
     return AstrologyBonusResponse(
-        zodiac_sign=zodiac_sign,
+        zodiac_sign=zodiac_sign or "",
         greeting=greeting,
         free_requests_left=user.free_requests_left,
     )

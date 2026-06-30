@@ -54,10 +54,16 @@ body {
 /* Onboarding */
 .onboarding {
   padding: 40px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 80vh;
+  text-align: center;
 }
 
 .onboarding h1 {
-  font-size: 24px;
+  font-size: 32px;
   margin-bottom: 16px;
   color: #ffd700;
 }
@@ -65,6 +71,61 @@ body {
 .onboarding p {
   margin-bottom: 24px;
   color: #b0b0b0;
+  max-width: 320px;
+}
+
+.onboarding-welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.onboarding-welcome h1 {
+  font-size: 40px;
+  margin-bottom: 12px;
+}
+
+.onboarding-welcome p {
+  font-size: 16px;
+  margin-bottom: 40px;
+}
+
+.onboarding-welcome button {
+  width: auto;
+  padding: 16px 48px;
+  font-size: 18px;
+}
+
+.gender-options {
+  display: flex;
+  gap: 12px;
+}
+
+.gender-btn {
+  flex: 1;
+  padding: 14px;
+  border: 2px solid #333;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #b0b0b0;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.gender-btn:hover {
+  border-color: rgba(255, 215, 0, 0.4);
+  color: #fff;
+}
+
+.gender-btn.selected {
+  border-color: #ffd700;
+  background: rgba(255, 215, 0, 0.15);
+  color: #ffd700;
+}
+
+.submit-btn {
+  margin-top: 8px;
 }
 
 .field {

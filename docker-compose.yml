@@ -49,7 +49,7 @@ services:
     build:
       context: ./frontend
       args:
-        - VITE_SKIP_ONBOARDING=true
+        - VITE_SKIP_ONBOARDING=false
     ports:
       - "3000:80"
     depends_on:

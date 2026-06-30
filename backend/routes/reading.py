@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
 from database import get_db
-from models import User
+from models import User, TarotSession, ReadingCycle
 from schemas import (
     ReadingAskRequest,
     ReadingDrawRequest,
@@ -37,6 +37,7 @@ from services.llm import (
     get_card_name,
 )
 from services.redis import redis_service
+from services.reading import SESSION_TTL
 
 logger = logging.getLogger(__name__)
 
@@ -88,11 +89,16 @@ async def _get_init_data(authorization: str = Header(default="")) -> str:
 async def reading_start(
     request: Request, req: ReadingStartRequest, initData: str = Depends(_get_init_data), db: AsyncSession = Depends(get_db)
 ):
-    await _get_user_from_init_data(initData, db)
+    user = await _get_user_from_init_data(initData, db)
     session_id = str(uuid.uuid4())
+
+    tarot_session = TarotSession(id=session_id, user_id=user.telegram_id)
+    db.add(tarot_session)
+    await db.commit()
+
     state = await reading_service.start(session_id)
-    await redis_service.set(_cycle_data_key(session_id), [])
-    logger.info("Reading started: session=%s", session_id)
+    await redis_service.set(_cycle_data_key(session_id), [], ttl=SESSION_TTL)
+    logger.info("Reading started: session=%s user=%s", session_id, user.telegram_id)
     return ReadingStartResponse(session_id=session_id, state=state.value)
 
 
@@ -107,7 +113,7 @@ async def reading_ask(
         raise HTTPException(status_code=404, detail="Reading not found")
 
     await reading_service.ask(req.session_id)
-    await redis_service.set(_current_question_key(req.session_id), req.question)
+    await redis_service.set(_current_question_key(req.session_id), req.question, ttl=SESSION_TTL)
     new_state = await reading_service.get_state(req.session_id)
     return {"session_id": req.session_id, "state": new_state.value}
 
@@ -142,7 +148,7 @@ async def reading_draw(
     await reading_service.draw(req.session_id)
     card_id = draw_cards(1)[0]
     card_name = get_card_name(card_id)
-    await redis_service.set(_current_card_key(req.session_id), card_id)
+    await redis_service.set(_current_card_key(req.session_id), card_id, ttl=SESSION_TTL)
     new_state = await reading_service.get_state(req.session_id)
     logger.info("Card drawn: session=%s card=%s", req.session_id, card_name)
     return ReadingDrawResponse(card_id=card_id, card_name=card_name, state=new_state.value)
@@ -167,7 +173,8 @@ async def reading_interpret(
     if card_id is None:
         raise HTTPException(status_code=400, detail="No card drawn for this reading")
 
-    await reading_service.mark_interpreting(req.session_id)
+    if state != ReadingState.INTERPRETATION:
+        await reading_service.mark_interpreting(req.session_id)
 
     cards = [int(card_id)]
     is_premium = bool(user.subscription_ends_at and user.subscription_ends_at > datetime.now(timezone.utc)) if user.subscription_ends_at else False
@@ -203,9 +210,28 @@ async def reading_interpret(
             "question": question,
             "answer": cleaned_answer,
         })
-        await redis_service.set(_cycle_data_key(req.session_id), cycle_data)
+        await redis_service.set(_cycle_data_key(req.session_id), cycle_data, ttl=SESSION_TTL)
 
-        await reading_service.complete_cycle(req.session_id)
+        new_state = await reading_service.complete_cycle(req.session_id)
+        cycle_count = await reading_service.get_cycle(req.session_id)
+
+        reading_cycle = ReadingCycle(
+            session_id=req.session_id,
+            cycle_number=cycle_count,
+            question=question,
+            card_id=cards[0],
+            interpretation=cleaned_answer,
+        )
+        db.add(reading_cycle)
+
+        session_result = await db.execute(
+            select(TarotSession).where(TarotSession.id == req.session_id)
+        )
+        tarot_session = session_result.scalar_one_or_none()
+        if tarot_session:
+            tarot_session.cycle_count = cycle_count
+        await db.commit()
+
         yield f"data: {json.dumps({'cleaned': cleaned_answer})}\n\n"
         yield "data: [DONE]\n\n"
 
@@ -229,6 +255,14 @@ async def reading_synthesis(
     cycles = await redis_service.get(_cycle_data_key(req.session_id)) or []
     if not cycles:
         raise HTTPException(status_code=400, detail="No cycles to synthesize")
+
+    session_result = await db.execute(
+        select(TarotSession).where(TarotSession.id == req.session_id)
+    )
+    tarot_session = session_result.scalar_one_or_none()
+    if tarot_session:
+        tarot_session.status = "archived"
+        await db.commit()
 
     custom_messages = build_synthesis_prompt(
         cycles=cycles,

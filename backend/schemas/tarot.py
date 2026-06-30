@@ -6,9 +6,10 @@ from pydantic import BaseModel, field_validator
 class AstrologyBonusRequest(BaseModel):
     initData: str
     real_name: str
-    birth_date: date
+    birth_date: date | None = None
     birth_time: time | None = None
     birth_location: str | None = None
+    gender: str | None = None
 
 
 class AstrologyBonusResponse(BaseModel):

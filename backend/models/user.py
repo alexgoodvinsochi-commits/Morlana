@@ -13,10 +13,11 @@ class User(Base):
     telegram_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     username: Mapped[str | None] = mapped_column(String(255))
     real_name: Mapped[str] = mapped_column(String(255))
-    birth_date: Mapped[date] = mapped_column()
+    birth_date: Mapped[date | None] = mapped_column(nullable=True)
     birth_time: Mapped[time | None] = mapped_column(Time, nullable=True)
     zodiac_sign: Mapped[str | None] = mapped_column(String(50))
     birth_location: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    gender: Mapped[str | None] = mapped_column(String(50), nullable=True)
     free_requests_left: Mapped[int] = mapped_column(Integer, default=3)
     subscription_ends_at: Mapped[datetime | None] = mapped_column(
         TIMESTAMP(timezone=True), nullable=True

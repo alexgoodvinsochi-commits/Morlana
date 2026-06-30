@@ -25,6 +25,7 @@ VALID_TRANSITIONS: dict[ReadingState, set[ReadingState]] = {
 }
 
 MAX_CYCLES = 6
+SESSION_TTL = 3600  # 1 hour
 
 
 class ReadingService:
@@ -53,8 +54,8 @@ class ReadingService:
         return f"{ReadingService._KEY_PREFIX}{session_id}:card"
 
     async def start(self, session_id: str) -> ReadingState:
-        await redis_service.set(self._state_key(session_id), ReadingState.WAITING.value)
-        await redis_service.set(self._cycle_key(session_id), 0)
+        await redis_service.set(self._state_key(session_id), ReadingState.WAITING.value, ttl=SESSION_TTL)
+        await redis_service.set(self._cycle_key(session_id), 0, ttl=SESSION_TTL)
         return ReadingState.WAITING
 
     async def get_state(self, session_id: str) -> ReadingState | None:
@@ -89,7 +90,7 @@ class ReadingService:
             raise ValueError(
                 f"Cannot transition from {current.value} to {target.value}"
             )
-        await redis_service.set(self._state_key(session_id), target.value)
+        await redis_service.set(self._state_key(session_id), target.value, ttl=SESSION_TTL)
         return target
 
     async def ask(self, session_id: str) -> ReadingState:
@@ -108,7 +109,7 @@ class ReadingService:
         """ИНТЕРПРЕТАЦИЯ -> ГОТОВО. Increments cycle counter. Auto-completes after MAX_CYCLES."""
         new_state = await self._transition(session_id, ReadingState.READY)
         cycle = await self.get_cycle(session_id) + 1
-        await redis_service.set(self._cycle_key(session_id), cycle)
+        await redis_service.set(self._cycle_key(session_id), cycle, ttl=SESSION_TTL)
         if cycle >= MAX_CYCLES:
             logger.info(f"Session {session_id} reached {MAX_CYCLES} cycles, auto-completing")
             await self._transition(session_id, ReadingState.COMPLETED)

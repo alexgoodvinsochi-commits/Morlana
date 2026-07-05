@@ -720,3 +720,72 @@ button:disabled {
   font-size: 12px;
   color: #8a7a62;
 }
+
+/* Reading History Screen */
+.reading-history-screen {
+  padding: 20px;
+}
+
+.reading-history-screen h2 {
+  color: #c4a265;
+  margin-bottom: 16px;
+}
+
+.history-item {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(196, 162, 101, 0.15);
+  border-radius: 12px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.history-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  cursor: pointer;
+}
+
+.history-date {
+  color: #c4a265;
+  font-weight: 600;
+}
+
+.history-cycles {
+  color: #a89878;
+  font-size: 14px;
+}
+
+.history-expand {
+  color: #c4a265;
+}
+
+.history-item-details {
+  padding: 0 16px 16px;
+  border-top: 1px solid rgba(196, 162, 101, 0.1);
+}
+
+.history-card-name {
+  color: #c4a265;
+  font-size: 14px;
+  margin-top: 4px;
+}
+
+.history-synthesis {
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(196, 162, 101, 0.08);
+  border-radius: 8px;
+}
+
+.history-synthesis h4 {
+  color: #c4a265;
+  margin-bottom: 8px;
+}
+
+.empty-history {
+  text-align: center;
+  color: #a89878;
+  padding: 40px;
+}

@@ -21,9 +21,10 @@ interface ReadingState {
 interface Props {
   initData: string;
   onExit: () => void;
+  onHistory: () => void;
 }
 
-export default function ReadingScreen({ initData, onExit }: Props) {
+export default function ReadingScreen({ initData, onExit, onHistory }: Props) {
   const [reading, setReading] = useState<ReadingState | null>(null);
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
@@ -331,6 +332,7 @@ export default function ReadingScreen({ initData, onExit }: Props) {
           {reading.state === 'ЗАВЕРШЕНО' && (
             <div className="reading-complete-actions">
               <button onClick={handleNewReading}>Новый расклад</button>
+              <button onClick={onHistory}>Мои расклады</button>
               <button onClick={onExit} className="exit-btn">На главную</button>
             </div>
           )}

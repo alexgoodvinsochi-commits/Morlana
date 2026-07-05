@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useTelegram } from './hooks/useTelegram';
 import Onboarding from './components/Onboarding';
 import ReadingScreen from './components/ReadingScreen';
+import ReadingHistory from './components/ReadingHistory';
 
 type Screen = 'onboarding' | 'reading';
 
@@ -55,6 +56,7 @@ function App() {
       userData: null,
     };
   });
+  const [showHistory, setShowHistory] = useState(false);
 
   useEffect(() => {
     saveState(state);
@@ -74,8 +76,12 @@ function App() {
         <Onboarding initData={initData} onComplete={handleOnboardingComplete} />
       )}
 
-      {state.screen === 'reading' && (
-        <ReadingScreen initData={initData} onExit={handleExitReading} />
+      {state.screen === 'reading' && !showHistory && (
+        <ReadingScreen initData={initData} onExit={handleExitReading} onHistory={() => setShowHistory(true)} />
+      )}
+
+      {showHistory && (
+        <ReadingHistory initData={initData} onBack={() => setShowHistory(false)} />
       )}
     </div>
   );

@@ -7,7 +7,7 @@
 body {
   font-family: 'Almendra', serif;
   background: #0a0612;
-  background-image: url('/bg.jpg');
+  background-image: url('/backgrounds/bg.jpg');
   background-size: cover;
   background-position: center;
   background-attachment: fixed;

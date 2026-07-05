@@ -24,15 +24,17 @@ function pad(n: number): string {
   return n.toString().padStart(2, '0');
 }
 
+const DECK_PATH = '/decks/rider-waite';
+
 export function getCardImage(number: number): string {
   if (number >= 1 && number <= 22) {
-    return `/maj${pad(number - 1)}.jpg`;
+    return `${DECK_PATH}/maj${pad(number - 1)}.jpg`;
   }
   const minorIndex = number - 23;
   const suitIndex = Math.floor(minorIndex / 14);
   const rankIndex = minorIndex % 14;
   const suit = SUITS[suitIndex];
-  return `/${suit}${pad(rankIndex + 1)}.jpg`;
+  return `${DECK_PATH}/${suit}${pad(rankIndex + 1)}.jpg`;
 }
 
 export function getCardName(number: number): string {

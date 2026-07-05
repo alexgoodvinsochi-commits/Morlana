@@ -16,6 +16,8 @@ from schemas import (
     ReadingAskRequest,
     ReadingDrawRequest,
     ReadingDrawResponse,
+    ReadingHistoryItem,
+    ReadingHistoryResponse,
     ReadingInterpretRequest,
     ReadingNextRequest,
     ReadingStartRequest,
@@ -23,6 +25,7 @@ from schemas import (
     ReadingStateResponse,
     ReadingSynthesisRequest,
 )
+from schemas.tarot import CycleHistory
 from services import (
     draw_cards,
     reading_service,
@@ -314,3 +317,45 @@ async def reading_state(request: Request, session_id: str, initData: str = Depen
         current_question=question,
         current_card=int(card_id) if card_id is not None else None,
     )
+
+
+@router.get("/history", response_model=ReadingHistoryResponse)
+# rate limit removed - auth protection sufficient
+async def reading_history(
+    request: Request, initData: str = Depends(_get_init_data), db: AsyncSession = Depends(get_db)
+):
+    user = await _get_user_from_init_data(initData, db)
+
+    sessions_result = await db.execute(
+        select(TarotSession)
+        .where(TarotSession.user_id == user.telegram_id)
+        .where(TarotSession.status == "archived")
+        .order_by(TarotSession.created_at.desc())
+        .limit(3)
+    )
+    sessions = sessions_result.scalars().all()
+
+    readings = []
+    for session in sessions:
+        cycles_result = await db.execute(
+            select(ReadingCycle)
+            .where(ReadingCycle.session_id == session.id)
+            .order_by(ReadingCycle.cycle_number)
+        )
+        cycles = cycles_result.scalars().all()
+
+        readings.append(ReadingHistoryItem(
+            session_id=session.id,
+            spread_name=session.spread_name or "one-card",
+            created_at=session.created_at,
+            cycle_count=session.cycle_count,
+            synthesis=session.synthesis,
+            cycles=[CycleHistory(
+                cycle_number=c.cycle_number,
+                question=c.question,
+                card_id=c.card_id,
+                card_name=c.card_name,
+            ) for c in cycles],
+        ))
+
+    return ReadingHistoryResponse(readings=readings)

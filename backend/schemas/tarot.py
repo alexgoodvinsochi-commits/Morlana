@@ -95,3 +95,23 @@ class ReadingStateResponse(BaseModel):
     cycles: list[dict]
     current_question: str | None = None
     current_card: int | None = None
+
+
+class CycleHistory(BaseModel):
+    cycle_number: int
+    question: str
+    card_id: int
+    card_name: str | None
+
+
+class ReadingHistoryItem(BaseModel):
+    session_id: str
+    spread_name: str
+    created_at: datetime
+    cycle_count: int
+    synthesis: str | None
+    cycles: list[CycleHistory]
+
+
+class ReadingHistoryResponse(BaseModel):
+    readings: list[ReadingHistoryItem]

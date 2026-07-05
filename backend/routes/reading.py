@@ -216,6 +216,7 @@ async def reading_interpret(
             cycle_number=cycle_count,
             question=question,
             card_id=cards[0],
+            card_name=get_card_name(cards[0]),
             interpretation=cleaned_answer,
         )
         db.add(reading_cycle)
@@ -257,28 +258,32 @@ async def reading_synthesis(
         select(TarotSession).where(TarotSession.id == req.session_id)
     )
     tarot_session = session_result.scalar_one_or_none()
-    if tarot_session:
-        tarot_session.status = "archived"
-        await db.commit()
 
     custom_messages = build_synthesis_prompt(
         cycles=cycles,
         user_name=user.real_name,
     )
 
-    async def event_stream():
-        full_response = []
-        async for chunk in stream_prediction(
-            cards=[],
-            question="",
-            user_name=user.real_name,
-            custom_messages=custom_messages,
-        ):
-            full_response.append(chunk)
-            yield f"data: {json.dumps({'text': chunk})}\n\n"
+    full_response = []
+    async for chunk in stream_prediction(
+        cards=[],
+        question="",
+        user_name=user.real_name,
+        custom_messages=custom_messages,
+    ):
+        full_response.append(chunk)
 
-        raw_answer = "".join(full_response)
-        cleaned_answer = clean_llm_output(raw_answer)
+    raw_answer = "".join(full_response)
+    cleaned_answer = clean_llm_output(raw_answer)
+
+    if tarot_session:
+        tarot_session.status = "archived"
+        tarot_session.synthesis = cleaned_answer
+        await db.commit()
+
+    async def event_stream():
+        for chunk in full_response:
+            yield f"data: {json.dumps({'text': chunk})}\n\n"
         yield f"data: {json.dumps({'cleaned': cleaned_answer})}\n\n"
         yield "data: [DONE]\n\n"
 

@@ -1,26 +1,38 @@
+import json
 import re
+from pathlib import Path
 from typing import AsyncGenerator
 
 from openai import AsyncOpenAI
 
 from config import settings
 
-client = (
-    AsyncOpenAI(api_key=settings.LLM_API_KEY, base_url=settings.LLM_BASE_URL or None)
-    if settings.LLM_API_KEY
-    else None
-)
+PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
-READING_SYSTEM_PROMPT = """Ты — таролог. Отвечай на русском, без англоязычных слов.
 
-Формат:
-1. Одно предложение — суть расклада
-2. Что значит каждая карта (1-2 предложения на карту)
-3. Итог: что делать прямо сейчас (1-2 предложения)
+def _load_file(filename: str) -> str:
+    path = PROMPTS_DIR / filename
+    if path.exists():
+        return path.read_text(encoding="utf-8").strip()
+    raise FileNotFoundError(f"File not found: {path}")
 
-Без воды. Максимум 500 слов. Говори как человек, не как книга."""
 
-SYNTHESIS_SYSTEM_PROMPT = """Ты — таролог. Синтезируй несколько раскладов в один вывод.
+def _load_spread(name: str) -> dict:
+    config_path = PROMPTS_DIR / "spreads" / f"{name}.json"
+    if not config_path.exists():
+        raise FileNotFoundError(f"Spread config not found: {config_path}")
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["prompt_text"] = _load_file(f"spreads/{config['system_prompt_file']}")
+    return config
+
+
+PERSONA = _load_file("persona.md")
+SPREADS = {
+    "one-card": _load_spread("one-card"),
+}
+DEFAULT_SPREAD = "one-card"
+
+SYNTHESIS_PROMPT = """Синтезируй несколько раскладов в один вывод.
 
 Формат:
 1. Что повторяется во всех вопросах (1-2 предложения)
@@ -28,6 +40,12 @@ SYNTHESIS_SYSTEM_PROMPT = """Ты — таролог. Синтезируй не�
 3. Что конкретно делать (2-3 действия)
 
 Максимум 400 слов. Без повторения отдельных раскладов."""
+
+client = (
+    AsyncOpenAI(api_key=settings.LLM_API_KEY, base_url=settings.LLM_BASE_URL or None)
+    if settings.LLM_API_KEY
+    else None
+)
 
 MAJOR_ARCANA = [
     "Шут", "Маг", "Верховная Жрица", "Императрица", "Император",
@@ -67,11 +85,29 @@ def build_reading_prompt(
     question: str,
     user_name: str,
     history: list[dict] | None = None,
+    spread_name: str = DEFAULT_SPREAD,
 ) -> list[dict]:
+    spread = SPREADS[spread_name]
     card_names = [get_card_name(c) for c in cards]
     card_list = ", ".join(card_names)
 
-    system_msg = f"""{READING_SYSTEM_PROMPT}
+    position_hints = []
+    for rule in spread.get("position_rules", []):
+        position_hints.append(f"- {rule['label']}: {rule['prompt_addition']}")
+    position_text = "\n".join(position_hints) if position_hints else ""
+
+    constraints = spread.get("aggregation_rules", {}).get("additional_constraints", [])
+    constraints_text = "\n".join(f"- {c}" for c in constraints) if constraints else ""
+
+    system_msg = f"""{PERSONA}
+
+---
+
+{spread['prompt_text']}
+
+{position_text}
+
+{constraints_text}
 
 Клиент: {user_name}
 Карты: {card_list}"""
@@ -83,6 +119,10 @@ def build_reading_prompt(
 
     messages.append({"role": "user", "content": question})
     return messages
+
+
+def get_spread_config(spread_name: str = DEFAULT_SPREAD) -> dict:
+    return SPREADS[spread_name]
 
 
 def build_synthesis_prompt(
@@ -104,7 +144,11 @@ def build_synthesis_prompt(
 
     all_cycles = "\n\n".join(cycles_text)
 
-    system_msg = f"""{SYNTHESIS_SYSTEM_PROMPT}
+    system_msg = f"""{PERSONA}
+
+---
+
+{SYNTHESIS_PROMPT}
 
 Клиент: {user_name}
 
@@ -121,19 +165,23 @@ async def stream_prediction(
     history: list[dict] | None = None,
     is_premium: bool = False,
     custom_messages: list[dict] | None = None,
+    spread_name: str = DEFAULT_SPREAD,
 ) -> AsyncGenerator[str, None]:
     if not client:
         yield "[Модуль ИИ не настроен. Установите LLM_API_KEY в .env]"
         return
 
+    spread = SPREADS[spread_name]
     model = settings.LLM_PREMIUM_MODEL if is_premium else settings.LLM_FREE_MODEL
-    messages = custom_messages if custom_messages else build_reading_prompt(cards, question, user_name, history)
+    messages = custom_messages if custom_messages else build_reading_prompt(
+        cards, question, user_name, history, spread_name
+    )
 
     stream = await client.chat.completions.create(
         model=model,
         messages=messages,
         stream=True,
-        max_tokens=2048,
+        max_tokens=spread.get("max_tokens", 2048),
     )
 
     async for chunk in stream:

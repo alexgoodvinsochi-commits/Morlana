@@ -313,16 +313,18 @@ export default function ReadingScreen({ initData, onExit }: Props) {
             </div>
           )}
 
-          {reading.state === 'ГОТОВО' && (
+          {(reading.state === 'ГОТОВО' || reading.state === 'ЗАВЕРШЕНО') && (
             <div className="cycle-complete-actions">
-              {reading.cycle_count < reading.max_cycles && (
+              {reading.cycle_count < reading.max_cycles && reading.state === 'ГОТОВО' && (
                 <button onClick={handleNextCycle} disabled={loading}>
                   Следующий цикл
                 </button>
               )}
-              <button onClick={handleSynthesis} disabled={loading} className="synthesis-btn">
-                {loading ? <><span className="spinner" /> Синтезирую...</> : 'Синтезировать расклад'}
-              </button>
+              {!synthesisText && (
+                <button onClick={handleSynthesis} disabled={loading} className="synthesis-btn">
+                  {loading ? <><span className="spinner" /> Синтезирую...</> : 'Синтезировать расклад'}
+                </button>
+              )}
             </div>
           )}
 

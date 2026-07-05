@@ -1,0 +1,24 @@
+{
+  "layout_name": "single_card",
+  "display_name": "Одна карта",
+  "description": "Быстрый расклад: один вопрос — одна карта",
+  "system_prompt_file": "one-card.md",
+  "card_count": 1,
+  "max_tokens": 2048,
+  "temperature": 0.7,
+  "position_rules": [
+    {
+      "position": "main",
+      "label": "Главная карта",
+      "prompt_addition": "Эта карта — ядро ситуации. Покажи главный фактор, определяющий развитие.",
+      "weight": 1.0
+    }
+  ],
+  "aggregation_rules": {
+    "summary_method": "single",
+    "additional_constraints": [
+      "Не повторяй описание карты дословно. Переводи символы в жизненные смыслы.",
+      "Выбирай 1–2 самых релевантных значения под контекст вопроса."
+    ]
+  }
+}

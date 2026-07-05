@@ -246,7 +246,8 @@ async def reading_synthesis(
     if state is None:
         raise HTTPException(status_code=404, detail="Reading not found")
 
-    await reading_service.end(req.session_id)
+    if state != ReadingState.COMPLETED:
+        await reading_service.end(req.session_id)
 
     cycles = await redis_service.get(_cycle_data_key(req.session_id)) or []
     if not cycles:

@@ -38,6 +38,11 @@ class TarotSession(Base):
     )
     status: Mapped[str] = mapped_column(String(50), default="active")
     cycle_count: Mapped[int] = mapped_column(Integer, default=0)
+    synthesis: Mapped[str | None] = mapped_column(Text, nullable=True)
+    spread_name: Mapped[str] = mapped_column(String(100), default="one-card")
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -57,6 +62,7 @@ class ReadingCycle(Base):
     cycle_number: Mapped[int] = mapped_column(Integer)
     question: Mapped[str] = mapped_column(Text)
     card_id: Mapped[int] = mapped_column(Integer)
+    card_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     interpretation: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc)

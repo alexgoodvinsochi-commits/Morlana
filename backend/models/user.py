@@ -13,6 +13,8 @@ class User(Base):
     telegram_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     username: Mapped[str | None] = mapped_column(String(255))
     real_name: Mapped[str] = mapped_column(String(255))
+    login: Mapped[str | None] = mapped_column(String(100), unique=True, nullable=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     birth_date: Mapped[date | None] = mapped_column(nullable=True)
     birth_time: Mapped[time | None] = mapped_column(Time, nullable=True)
     zodiac_sign: Mapped[str | None] = mapped_column(String(50))

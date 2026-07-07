@@ -21,7 +21,7 @@ interface ReadingState {
 interface Props {
   initData: string;
   onExit: () => void;
-  onHistory: () => void;
+  onHistory?: () => void;
 }
 
 export default function ReadingScreen({ initData, onExit, onHistory }: Props) {

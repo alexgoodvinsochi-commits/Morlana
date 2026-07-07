@@ -22,7 +22,7 @@ def _load_spread(name: str) -> dict:
     if not config_path.exists():
         raise FileNotFoundError(f"Spread config not found: {config_path}")
     config = json.loads(config_path.read_text(encoding="utf-8"))
-    config["prompt_text"] = _load_file(f"spreads/{config['system_prompt_file']}")
+    config["prompt_text"] = config.get("system_prompt", "")
     return config
 
 

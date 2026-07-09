@@ -41,11 +41,20 @@ button {
 button:hover {
   background: rgba(196, 162, 101, 0.1);
   border-color: #c4a265;
+  box-shadow: 0 0 20px rgba(196, 162, 101, 0.3);
+  transform: scale(1.02);
+}
+
+button:active {
+  transform: scale(0.98);
+  box-shadow: 0 0 10px rgba(196, 162, 101, 0.2);
 }
 
 button:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 /* === Spinner === */
@@ -63,6 +72,16 @@ button:disabled {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* === Loading Button Pulse === */
+@keyframes buttonPulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+button:disabled:not(.submit-btn) {
+  animation: buttonPulse 1.5s ease-in-out infinite;
 }
 
 /* === Error === */

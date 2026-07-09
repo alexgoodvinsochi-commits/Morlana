@@ -222,35 +222,9 @@ export default function ReadingScreen({ initData, onExit, onHistory }: Props) {
 
   return (
     <div className="reading-screen">
-      {reading.cycles.length > 0 && (
-        <div className="reading-history">
-          <h3>Прошлые циклы</h3>
-          {reading.cycles.map((cycle, i) => (
-            <div key={i} className="history-cycle">
-              <div className="history-cycle-header">
-                <span className="cycle-number">Цикл {i + 1}</span>
-                <div className="history-cards">
-                  {cycle.cards.map((card, ci) => (
-                    <img
-                      key={ci}
-                      src={getCardImage(card)}
-                      alt={getCardName(card)}
-                      className="history-card-thumb"
-                    />
-                  ))}
-                </div>
-              </div>
-              <p className="history-question">{cycle.question}</p>
-              <p className="history-answer">{cycle.answer}</p>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="reading-current">
-        <h2>Текущий цикл {reading.cycle_count + 1}/{reading.max_cycles}</h2>
-
-        {reading.current_card && (
+      {/* Card Container - 3/4 screen */}
+      <div className="card-container">
+        {reading.current_card ? (
           <div className="current-card">
             <img
               src={getCardImage(reading.current_card)}
@@ -259,94 +233,106 @@ export default function ReadingScreen({ initData, onExit, onHistory }: Props) {
             />
             <p className="current-card-name">{getCardName(reading.current_card)}</p>
           </div>
-        )}
-
-        {reading.current_question && !reading.current_card && (
+        ) : reading.current_question ? (
           <p className="current-question">Ваш вопрос: {reading.current_question}</p>
+        ) : (
+          <h2>Цикл {reading.cycle_count + 1}/{reading.max_cycles}</h2>
         )}
+      </div>
 
-        {streamText && (
-          <div className="interpretation-text">
-            <p>{streamText}</p>
-          </div>
-        )}
-
-        {synthesisText && (
-          <div className="synthesis-text">
-            <h3>Итоговая синтезация</h3>
-            <p>{synthesisText}</p>
-          </div>
-        )}
-
-        <div className="reading-actions">
-          {reading.state === 'ОЖИДАНИЕ' && (
-            <>
-              <div className="input-row">
-                <input
-                  type="text"
-                  value={question}
-                  onChange={(e) => setQuestion(e.target.value)}
-                  placeholder="Задайте вопрос картам..."
-                  disabled={loading}
-                  onKeyDown={(e) => e.key === 'Enter' && handleAsk()}
-                />
-                <button onClick={handleAsk} disabled={loading || !question.trim()}>
-                  {loading ? '...' : '→'}
-                </button>
-              </div>
-            </>
-          )}
-
-          {reading.state === 'ВОПРОС ЗАДАН' && (
-            <button onClick={handleDraw} disabled={loading}>
-              {loading ? <><span className="spinner" /> Вытягиваю...</> : 'Вытянуть карту'}
-            </button>
-          )}
-
-          {reading.state === 'КАРТА ВЫТЯНУТА' && (
-            <button onClick={handleInterpret} disabled={loading}>
-              {loading ? <><span className="spinner" /> Толкую...</> : 'Получить толкование'}
-            </button>
-          )}
-
-          {reading.state === 'ИНТЕРПРЕТАЦИЯ' && (
-            <div className="reading-status">
-              <span className="spinner" /> Толкование загружается...
-            </div>
-          )}
-
-          {(reading.state === 'ГОТОВО' || reading.state === 'ЗАВЕРШЕНО') && (
-            <div className="cycle-complete-actions">
-              {reading.cycle_count < reading.max_cycles && reading.state === 'ГОТОВО' && (
-                <button onClick={handleNextCycle} disabled={loading}>
-                  Следующий цикл
-                </button>
-              )}
-              {!synthesisText && (
-                <button onClick={handleSynthesis} disabled={loading} className="synthesis-btn">
-                  {loading ? <><span className="spinner" /> Синтезирую...</> : 'Синтезировать расклад'}
-                </button>
-              )}
-            </div>
-          )}
-
-          {reading.state === 'ЗАВЕРШЕНО' && (
-            <div className="reading-complete-actions">
-              <button onClick={handleNewReading}>Новый расклад</button>
-              <button onClick={onHistory}>Мои расклады</button>
-              <button onClick={onExit} className="exit-btn">На главную</button>
-            </div>
-          )}
+      {/* Dots Indicator */}
+      {reading.current_card && (
+        <div className="dots-indicator">
+          <div className="dot active" />
+          <div className="dot" />
+          <div className="dot" />
         </div>
+      )}
 
-        {error && (
-          <div className="error-msg">
-            <p>{error}</p>
-            <button onClick={() => setError('')}>Закрыть</button>
+      {/* Scrollable Interpretation */}
+      {(streamText || synthesisText) && (
+        <div className="interpretation-container">
+          <div className="interpretation-gradient-top" />
+          <div className="interpretation-scroll" ref={messagesEndRef}>
+            {synthesisText && (
+              <div className="synthesis-text">
+                <h3>Итоговая синтезация</h3>
+                <p>{synthesisText}</p>
+              </div>
+            )}
+            {streamText && (
+              <div className="interpretation-text">
+                <p>{streamText}</p>
+              </div>
+            )}
+          </div>
+          <div className="interpretation-gradient-bottom" />
+        </div>
+      )}
+
+      {/* Action Buttons */}
+      <div className="reading-actions">
+        {reading.state === 'ОЖИДАНИЕ' && (
+          <>
+            <div className="input-row">
+              <input
+                type="text"
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                placeholder="Задайте вопрос картам..."
+                disabled={loading}
+                onKeyDown={(e) => e.key === 'Enter' && handleAsk()}
+              />
+              <button onClick={handleAsk} disabled={loading || !question.trim()}>
+                {loading ? '...' : '→'}
+              </button>
+            </div>
+          </>
+        )}
+
+        {reading.state === 'ВОПРОС ЗАДАН' && (
+          <button onClick={handleDraw} disabled={loading}>
+            {loading ? <><span className="spinner" /> Вытягиваю...</> : 'Вытянуть карту'}
+          </button>
+        )}
+
+        {reading.state === 'КАРТА ВЫТЯНУТА' && (
+          <button onClick={handleInterpret} disabled={loading}>
+            {loading ? <><span className="spinner" /> Толкую...</> : 'Получить толкование'}
+          </button>
+        )}
+
+        {reading.state === 'ИНТЕРПРЕТАЦИЯ' && (
+          <div className="reading-status">
+            <span className="spinner" /> Толкование загружается...
+          </div>
+        )}
+
+        {(reading.state === 'ГОТОВО' || reading.state === 'ЗАВЕРШЕНО') && (
+          <div className="cycle-complete-actions">
+            {reading.cycle_count < reading.max_cycles && reading.state === 'ГОТОВО' && (
+              <button onClick={handleNextCycle} disabled={loading}>
+                Следующий цикл
+              </button>
+            )}
+            {!synthesisText && (
+              <button onClick={handleSynthesis} disabled={loading} className="synthesis-btn">
+                {loading ? <><span className="spinner" /> Синтезирую...</> : 'Синтезировать расклад'}
+              </button>
+            )}
+          </div>
+        )}
+
+        {reading.state === 'ЗАВЕРШЕНО' && (
+          <div className="reading-complete-actions">
+            <button onClick={handleNewReading}>Новый расклад</button>
+            <button onClick={onHistory}>Мои расклады</button>
+            <button onClick={onExit} className="exit-btn">На главную</button>
           </div>
         )}
       </div>
 
+      {/* Progress Bar */}
       <div className="reading-progress">
         <div className="progress-bar">
           <div className="progress-fill" style={{ width: `${progress}%` }} />
@@ -355,6 +341,14 @@ export default function ReadingScreen({ initData, onExit, onHistory }: Props) {
           Цикл {reading.cycle_count} из {reading.max_cycles}
         </p>
       </div>
+
+      {/* Error */}
+      {error && (
+        <div className="error-msg">
+          <p>{error}</p>
+          <button onClick={() => setError('')}>Закрыть</button>
+        </div>
+      )}
 
       <div ref={messagesEndRef} />
     </div>

@@ -56,7 +56,7 @@ async def _cleanup_empty_sessions(db: AsyncSession, user_id: int):
         .where(TarotSession.user_id == user_id)
         .where(TarotSession.cycle_count == 0)
     )
-    empty_ids = [s.id for s in empty_sessions.scalars().all()]
+    empty_ids = list(empty_sessions.scalars().all())
     if empty_ids:
         await db.execute(
             delete(ReadingCycle).where(ReadingCycle.session_id.in_(empty_ids))
@@ -76,7 +76,7 @@ async def _trim_old_archived_sessions(db: AsyncSession, user_id: int):
         .order_by(TarotSession.created_at.desc())
         .offset(MAX_SESSIONS)
     )
-    old_ids = [s.id for s in archived.scalars().all()]
+    old_ids = list(archived.scalars().all())
     if old_ids:
         await db.execute(
             delete(ReadingCycle).where(ReadingCycle.session_id.in_(old_ids))

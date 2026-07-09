@@ -9,7 +9,9 @@
   display: flex;
   justify-content: space-around;
   padding: 8px 0 12px;
-  background: rgba(10, 6, 18, 0.95);
+  background: rgba(10, 6, 18, 0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border-top: 1px solid rgba(196, 162, 101, 0.2);
   z-index: 100;
 }
@@ -31,6 +33,7 @@
 
 .nav-item.active {
   color: #c4a265;
+  text-shadow: 0 0 10px rgba(196, 162, 101, 0.5);
 }
 
 .nav-item:hover {

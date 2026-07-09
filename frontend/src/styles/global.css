@@ -1,0 +1,119 @@
+/* === Global Reset === */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Almendra', serif;
+  background: #0a0612;
+  background-image: url('/backgrounds/bg.jpg');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  color: #d4c5a9;
+  min-height: 100vh;
+}
+
+.app {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 20px;
+  min-height: 100vh;
+  background: linear-gradient(180deg, rgba(10, 6, 18, 0.7) 0%, rgba(10, 6, 18, 0.85) 100%);
+}
+
+/* === Base Button === */
+button {
+  width: 100%;
+  padding: 14px;
+  border: 1px solid rgba(196, 162, 101, 0.5);
+  border-radius: 25px;
+  background: transparent;
+  color: #c4a265;
+  font-size: 16px;
+  font-family: 'Almendra', serif;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+button:hover {
+  background: rgba(196, 162, 101, 0.1);
+  border-color: #c4a265;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* === Spinner === */
+.spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(196, 162, 101, 0.2);
+  border-top-color: #c4a265;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  vertical-align: middle;
+  margin-right: 8px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* === Error === */
+.error {
+  color: #c47a65;
+  margin-bottom: 16px;
+}
+
+.error-msg {
+  background: rgba(196, 122, 101, 0.1);
+  border: 1px solid rgba(196, 122, 101, 0.3);
+  border-radius: 12px;
+  padding: 16px;
+  text-align: center;
+  color: #c47a65;
+  margin: 16px 0;
+}
+
+.error-msg button {
+  margin-top: 12px;
+  background: #c47a65;
+  border-color: #c47a65;
+  color: #fff;
+  width: auto;
+  padding: 10px 24px;
+  border-radius: 25px;
+}
+
+/* === App Layout === */
+.app-content {
+  padding-bottom: 70px;
+}
+
+/* === Auth Links === */
+.auth-link {
+  text-align: center;
+  margin-top: 24px;
+  color: #a89878;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: #c4a265;
+  cursor: pointer;
+  font-family: 'Almendra', serif;
+  font-size: inherit;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.link-btn:hover {
+  color: #d4b87a;
+}

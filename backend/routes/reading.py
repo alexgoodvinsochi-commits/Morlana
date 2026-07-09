@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Header
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from rate_limiter import limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,6 +45,46 @@ from services.reading import SESSION_TTL
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/tarot/reading", tags=["reading"])
+
+MAX_SESSIONS = 3
+
+
+async def _cleanup_empty_sessions(db: AsyncSession, user_id: int):
+    """Delete sessions with 0 reading cycles."""
+    empty_sessions = await db.execute(
+        select(TarotSession.id)
+        .where(TarotSession.user_id == user_id)
+        .where(TarotSession.cycle_count == 0)
+    )
+    empty_ids = [s.id for s in empty_sessions.scalars().all()]
+    if empty_ids:
+        await db.execute(
+            delete(ReadingCycle).where(ReadingCycle.session_id.in_(empty_ids))
+        )
+        await db.execute(
+            delete(TarotSession).where(TarotSession.id.in_(empty_ids))
+        )
+        logger.info("Cleaned %d empty sessions for user %s", len(empty_ids), user_id)
+
+
+async def _trim_old_archived_sessions(db: AsyncSession, user_id: int):
+    """Keep only last MAX_SESSIONS archived sessions, delete older ones."""
+    archived = await db.execute(
+        select(TarotSession.id)
+        .where(TarotSession.user_id == user_id)
+        .where(TarotSession.status == "archived")
+        .order_by(TarotSession.created_at.desc())
+        .offset(MAX_SESSIONS)
+    )
+    old_ids = [s.id for s in archived.scalars().all()]
+    if old_ids:
+        await db.execute(
+            delete(ReadingCycle).where(ReadingCycle.session_id.in_(old_ids))
+        )
+        await db.execute(
+            delete(TarotSession).where(TarotSession.id.in_(old_ids))
+        )
+        logger.info("Trimmed %d old archived sessions for user %s", len(old_ids), user_id)
 
 
 def _cycle_data_key(session_id: str) -> str:
@@ -93,6 +133,9 @@ async def reading_start(
     request: Request, req: ReadingStartRequest, initData: str = Depends(_get_init_data), db: AsyncSession = Depends(get_db)
 ):
     user = await _get_user_from_init_data(initData, db)
+
+    await _cleanup_empty_sessions(db, user.telegram_id)
+
     session_id = str(uuid.uuid4())
 
     tarot_session = TarotSession(id=session_id, user_id=user.telegram_id)
@@ -283,6 +326,9 @@ async def reading_synthesis(
         tarot_session.status = "archived"
         tarot_session.synthesis = cleaned_answer
         await db.commit()
+
+    await _trim_old_archived_sessions(db, user.telegram_id)
+    await db.commit()
 
     async def event_stream():
         for chunk in full_response:

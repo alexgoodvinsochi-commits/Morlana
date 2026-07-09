@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { apiPost, apiGet, apiStream } from '../api/client';
 import { getCardImage, getCardName } from '../utils/cardMap';
+import '../styles/reading.css';
 
 interface Cycle {
   cards: number[];

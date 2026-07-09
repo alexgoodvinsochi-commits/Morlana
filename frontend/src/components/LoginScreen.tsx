@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { apiPost } from '../api/client';
+import '../styles/onboarding.css';
 
 interface Props {
   onLogin: (data: { login: string; real_name: string }) => void;

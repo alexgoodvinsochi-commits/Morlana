@@ -1,0 +1,79 @@
+/* === Dashboard === */
+.dashboard {
+  padding: 20px;
+  min-height: calc(100vh - 70px);
+}
+
+.dashboard-header {
+  text-align: center;
+  padding: 30px 0;
+}
+
+.user-avatar {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #c4a265, #a88a50);
+  color: #0a0612;
+  font-size: 32px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+}
+
+.dashboard-header h2 {
+  color: #c4a265;
+  font-size: 24px;
+  margin-bottom: 4px;
+}
+
+.user-login {
+  color: #8a7a62;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.user-gender {
+  color: #a89878;
+  font-size: 14px;
+}
+
+.dashboard-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.dashboard-btn {
+  width: 100%;
+  padding: 16px;
+  border: 1px solid rgba(196, 162, 101, 0.4);
+  border-radius: 25px;
+  background: transparent;
+  color: #c4a265;
+  font-size: 16px;
+  font-family: 'Almendra', serif;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.dashboard-btn:hover {
+  background: rgba(196, 162, 101, 0.1);
+}
+
+.dashboard-btn.primary {
+  background: rgba(196, 162, 101, 0.15);
+  border-color: #c4a265;
+}
+
+.dashboard-btn.danger {
+  color: #c47a65;
+  border-color: rgba(196, 122, 101, 0.4);
+}
+
+.dashboard-btn.danger:hover {
+  background: rgba(196, 122, 101, 0.1);
+}

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTelegram } from '../hooks/useTelegram';
 import { apiPost } from '../api/client';
+import '../styles/paywall.css';
 
 interface Props {
   freeRequestsLeft: number;

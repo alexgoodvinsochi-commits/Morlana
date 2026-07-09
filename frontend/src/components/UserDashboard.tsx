@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { apiGet } from '../api/client';
 import ReadingHistory from './ReadingHistory';
+import '../styles/dashboard.css';
 
 interface UserData {
   telegram_id: number;

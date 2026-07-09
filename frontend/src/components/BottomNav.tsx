@@ -1,3 +1,5 @@
+import '../styles/bottomnav.css';
+
 interface Props {
   active: 'home' | 'reading' | 'history';
   onNavigate: (screen: 'home' | 'reading' | 'history') => void;

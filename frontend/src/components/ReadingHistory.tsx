@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { apiGet } from '../api/client';
 import { getCardImage, getCardName } from '../utils/cardMap';
+import '../styles/history.css';
 
 interface CycleHistory {
   cycle_number: number;

@@ -28,6 +28,23 @@ MAX_CYCLES = 6
 SESSION_TTL = 3600  # 1 hour
 
 
+class ReadingNotFound(ValueError):
+    """The reading has no live state in Redis (never started, or expired)."""
+
+    def __init__(self, session_id: str):
+        self.session_id = session_id
+        super().__init__(f"No active reading for session {session_id}")
+
+
+class InvalidTransition(ValueError):
+    """The state machine does not allow moving from `current` to `target`."""
+
+    def __init__(self, current: ReadingState, target: ReadingState):
+        self.current = current
+        self.target = target
+        super().__init__(f"Cannot transition from {current.value} to {target.value}")
+
+
 class ReadingService:
     """Manages the reading state machine for tarot sessions.
 
@@ -82,14 +99,16 @@ class ReadingService:
             return False
         return True
 
-    async def _transition(self, session_id: str, target: ReadingState) -> ReadingState:
+    async def _check_transition(self, session_id: str, target: ReadingState) -> None:
+        """Raise ReadingNotFound / InvalidTransition unless `target` is reachable now."""
         current = await self.get_state(session_id)
         if current is None:
-            raise ValueError(f"No active reading for session {session_id}")
+            raise ReadingNotFound(session_id)
         if not self._validate_transition(current, target):
-            raise ValueError(
-                f"Cannot transition from {current.value} to {target.value}"
-            )
+            raise InvalidTransition(current, target)
+
+    async def _transition(self, session_id: str, target: ReadingState) -> ReadingState:
+        await self._check_transition(session_id, target)
         await redis_service.set(self._state_key(session_id), target.value, ttl=SESSION_TTL)
         return target
 
@@ -105,10 +124,15 @@ class ReadingService:
         """КАРТА ВЫТЯНУТА -> ИНТЕРПРЕТАЦИЯ"""
         return await self._transition(session_id, ReadingState.INTERPRETATION)
 
-    async def complete_cycle(self, session_id: str) -> ReadingState:
-        """ИНТЕРПРЕТАЦИЯ -> ГОТОВО. Increments cycle counter. Auto-completes after MAX_CYCLES."""
+    async def complete_cycle(self, session_id: str, cycle: int | None = None) -> ReadingState:
+        """ИНТЕРПРЕТАЦИЯ -> ГОТОВО. Advances the cycle counter. Auto-completes after MAX_CYCLES.
+
+        `cycle` is the number of the cycle that was just saved; without it the
+        counter is incremented. Passing it keeps a repeated call idempotent.
+        """
         new_state = await self._transition(session_id, ReadingState.READY)
-        cycle = await self.get_cycle(session_id) + 1
+        if cycle is None:
+            cycle = await self.get_cycle(session_id) + 1
         await redis_service.set(self._cycle_key(session_id), cycle, ttl=SESSION_TTL)
         if cycle >= MAX_CYCLES:
             logger.info(f"Session {session_id} reached {MAX_CYCLES} cycles, auto-completing")
@@ -122,6 +146,8 @@ class ReadingService:
 
     async def start_new_cycle(self, session_id: str) -> ReadingState:
         """ГОТОВО -> ОЖИДАНИЕ (начало нового цикла)"""
+        # Validate first: a wrong-state call must not wipe the current question and card.
+        await self._check_transition(session_id, ReadingState.WAITING)
         await redis_service.delete(self._question_key(session_id))
         await redis_service.delete(self._card_key(session_id))
         return await self._transition(session_id, ReadingState.WAITING)

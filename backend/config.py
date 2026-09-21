@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
     DEV_MODE: bool = False
     INIT_DATA_MAX_AGE: int = 86400
+    # How many archived readings /history returns. Older ones stay in the DB.
+    HISTORY_LIMIT_FREE: int = 3
+    HISTORY_LIMIT_PREMIUM: int = 50
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

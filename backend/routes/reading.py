@@ -6,12 +6,11 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, Header
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select, delete, update
-from rate_limiter import limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
 from database import get_db
-from models import User, TarotSession, ReadingCycle, ChatHistory
+from models import User, TarotSession, ReadingCycle
 from schemas import (
     ReadingActiveResponse,
     ReadingAskRequest,
@@ -33,7 +32,7 @@ from services import (
     stream_prediction,
     validate_telegram_init_data,
 )
-from services.reading import ReadingState
+from services.reading import InvalidTransition, ReadingNotFound, ReadingState
 from services.llm import (
     build_reading_prompt,
     build_synthesis_prompt,
@@ -47,30 +46,22 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/tarot/reading", tags=["reading"])
 
-MAX_SESSIONS = 3
 # How many of the user's newest active sessions /active checks for live Redis state.
 ACTIVE_LOOKUP_LIMIT = 10
 
 
 async def _cleanup_empty_sessions(db: AsyncSession, user_id: int):
-    """Delete abandoned readings: active, 0 cycles, older than SESSION_TTL, no chat messages.
+    """Delete abandoned readings: active, 0 cycles, older than SESSION_TTL.
 
-    Their Redis state has expired, so nothing in use is deleted; legacy chat
-    sessions (rows in chat_histories) survive.
+    Their Redis state has expired, so nothing in use is deleted.
     """
     cutoff = datetime.now(timezone.utc) - timedelta(seconds=SESSION_TTL)
-    has_messages = (
-        select(ChatHistory.id)
-        .where(ChatHistory.session_id == TarotSession.id)
-        .exists()
-    )
     candidates = await db.execute(
         select(TarotSession.id)
         .where(TarotSession.user_id == user_id)
         .where(TarotSession.status == "active")
         .where(TarotSession.cycle_count == 0)
         .where(TarotSession.created_at < cutoff)
-        .where(~has_messages)
     )
     empty_ids = []
     for session_id in candidates.scalars().all():
@@ -101,26 +92,6 @@ async def _archive_unfinished_sessions(db: AsyncSession, user_id: int):
     )
     if result.rowcount:
         logger.info("Archived %d unfinished sessions for user %s", result.rowcount, user_id)
-
-
-async def _trim_old_archived_sessions(db: AsyncSession, user_id: int):
-    """Keep only last MAX_SESSIONS archived sessions, delete older ones."""
-    archived = await db.execute(
-        select(TarotSession.id)
-        .where(TarotSession.user_id == user_id)
-        .where(TarotSession.status == "archived")
-        .order_by(TarotSession.created_at.desc())
-        .offset(MAX_SESSIONS)
-    )
-    old_ids = list(archived.scalars().all())
-    if old_ids:
-        await db.execute(
-            delete(ReadingCycle).where(ReadingCycle.session_id.in_(old_ids))
-        )
-        await db.execute(
-            delete(TarotSession).where(TarotSession.id.in_(old_ids))
-        )
-        logger.info("Trimmed %d old archived sessions for user %s", len(old_ids), user_id)
 
 
 def _cycle_data_key(session_id: str) -> str:
@@ -187,6 +158,25 @@ async def _get_owned_session(db: AsyncSession, session_id: str, user: User) -> T
     return tarot_session
 
 
+def _is_premium(user: User) -> bool:
+    ends_at = user.subscription_ends_at
+    return ends_at is not None and ends_at > datetime.now(timezone.utc)
+
+
+async def _apply_transition(step, session_id: str) -> ReadingState:
+    """Run one state-machine step, turning its errors into HTTP answers."""
+    try:
+        return await step(session_id)
+    except ReadingNotFound:
+        # The Redis state expired between the caller's lookup and the transition.
+        raise HTTPException(status_code=404, detail="Reading not found")
+    except InvalidTransition as e:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Invalid state transition: {e.current.value} -> {e.target.value}",
+        )
+
+
 async def _get_init_data(authorization: str = Header(default="")) -> str:
     if settings.DEV_MODE:
         if not authorization.startswith("Bearer "):
@@ -206,7 +196,6 @@ async def reading_start(
 
     await _cleanup_empty_sessions(db, user.telegram_id)
     await _archive_unfinished_sessions(db, user.telegram_id)
-    await _trim_old_archived_sessions(db, user.telegram_id)
 
     session_id = str(uuid.uuid4())
 
@@ -255,7 +244,7 @@ async def reading_ask(
         raise HTTPException(status_code=404, detail="Reading not found")
 
     await _refresh_session_ttl(req.session_id)
-    await reading_service.ask(req.session_id)
+    await _apply_transition(reading_service.ask, req.session_id)
     await redis_service.set(_current_question_key(req.session_id), req.question, ttl=SESSION_TTL)
     new_state = await reading_service.get_state(req.session_id)
     return {"session_id": req.session_id, "state": new_state.value}
@@ -272,11 +261,9 @@ async def reading_next(
     state = await reading_service.get_state(req.session_id)
     if state is None:
         raise HTTPException(status_code=404, detail="Reading not found")
-    if state != ReadingState.READY:
-        raise HTTPException(status_code=400, detail=f"Cannot start new cycle in state: {state.value}")
 
     await _refresh_session_ttl(req.session_id)
-    await reading_service.start_new_cycle(req.session_id)
+    await _apply_transition(reading_service.start_new_cycle, req.session_id)
     new_state = await reading_service.get_state(req.session_id)
     return {"session_id": req.session_id, "state": new_state.value}
 
@@ -294,7 +281,7 @@ async def reading_draw(
         raise HTTPException(status_code=404, detail="Reading not found")
 
     await _refresh_session_ttl(req.session_id)
-    await reading_service.draw(req.session_id)
+    await _apply_transition(reading_service.draw, req.session_id)
     card_id = draw_cards(1)[0]
     card_name = get_card_name(card_id)
     await redis_service.set(_current_card_key(req.session_id), card_id, ttl=SESSION_TTL)
@@ -326,10 +313,10 @@ async def reading_interpret(
         raise HTTPException(status_code=400, detail="No card drawn for this reading")
 
     if state != ReadingState.INTERPRETATION:
-        await reading_service.mark_interpreting(req.session_id)
+        await _apply_transition(reading_service.mark_interpreting, req.session_id)
 
     cards = [int(card_id)]
-    is_premium = bool(user.subscription_ends_at and user.subscription_ends_at > datetime.now(timezone.utc)) if user.subscription_ends_at else False
+    is_premium = _is_premium(user)
 
     custom_messages = build_reading_prompt(
         cards=cards,
@@ -337,56 +324,86 @@ async def reading_interpret(
         user_name=user.real_name,
     )
 
+    # The cycle row and the Redis state cannot be written atomically. If an earlier
+    # attempt committed the row and failed before ГОТОВО (Redis blip, client gone),
+    # the retry finishes that cycle from the saved row: inserting it again would
+    # violate uq_reading_cycles_session_cycle on every retry.
+    last_cycle = (await db.execute(
+        select(ReadingCycle)
+        .where(ReadingCycle.session_id == req.session_id)
+        .order_by(ReadingCycle.cycle_number.desc())
+        .limit(1)
+    )).scalar_one_or_none()
+    last_number = last_cycle.cycle_number if last_cycle is not None else 0
+    saved_answer = None
+    if (
+        last_cycle is not None
+        and last_number > await reading_service.get_cycle(req.session_id)
+        and last_cycle.question == question
+        and last_cycle.card_id == cards[0]
+    ):
+        saved_answer = last_cycle.interpretation
+
     async def event_stream():
         # Any failure leaves the reading in ИНТЕРПРЕТАЦИЯ, from which /interpret can be retried.
         try:
-            full_response = []
-            async for chunk in stream_prediction(
-                cards=cards,
-                question=question,
-                user_name=user.real_name,
-                is_premium=is_premium,
-                custom_messages=custom_messages,
-            ):
-                full_response.append(chunk)
-                yield f"data: {json.dumps({'text': chunk})}\n\n"
+            if saved_answer is not None:
+                cleaned_answer = saved_answer
+                cycle_count = last_number
+                logger.info("Resuming saved cycle %d: session=%s", cycle_count, req.session_id)
+                yield f"data: {json.dumps({'text': cleaned_answer})}\n\n"
+            else:
+                full_response = []
+                async for chunk in stream_prediction(
+                    cards=cards,
+                    question=question,
+                    user_name=user.real_name,
+                    is_premium=is_premium,
+                    custom_messages=custom_messages,
+                ):
+                    full_response.append(chunk)
+                    yield f"data: {json.dumps({'text': chunk})}\n\n"
 
-            raw_answer = "".join(full_response)
-            cleaned_answer = clean_llm_output(raw_answer)
-            if not cleaned_answer.strip():
-                raise RuntimeError("LLM returned an empty interpretation")
+                raw_answer = "".join(full_response)
+                cleaned_answer = clean_llm_output(raw_answer)
+                if not cleaned_answer.strip():
+                    raise RuntimeError("LLM returned an empty interpretation")
 
-            # Another request (e.g. a retry) may have completed this cycle meanwhile.
-            if await reading_service.get_state(req.session_id) != ReadingState.INTERPRETATION:
-                raise RuntimeError("Reading left the interpretation state during streaming")
-            cycle_count = await reading_service.get_cycle(req.session_id) + 1
+                # Another request (e.g. a retry) may have completed this cycle meanwhile.
+                if await reading_service.get_state(req.session_id) != ReadingState.INTERPRETATION:
+                    raise RuntimeError("Reading left the interpretation state during streaming")
+                # Numbered after the saved rows too: a Redis counter that fell behind
+                # them must not reuse a taken cycle_number.
+                cycle_count = max(await reading_service.get_cycle(req.session_id), last_number) + 1
 
-            # Persist to the DB first and move the Redis state last, so a DB failure
-            # cannot leave the reading in ГОТОВО without its cycle saved.
-            db.add(ReadingCycle(
-                session_id=req.session_id,
-                cycle_number=cycle_count,
-                question=question,
-                card_id=cards[0],
-                card_name=get_card_name(cards[0]),
-                interpretation=cleaned_answer,
-            ))
-            await db.execute(
-                update(TarotSession)
-                .where(TarotSession.id == req.session_id)
-                .values(cycle_count=cycle_count)
-            )
-            await db.commit()
+                # Persist to the DB first and move the Redis state last, so a DB failure
+                # cannot leave the reading in ГОТОВО without its cycle saved.
+                db.add(ReadingCycle(
+                    session_id=req.session_id,
+                    cycle_number=cycle_count,
+                    question=question,
+                    card_id=cards[0],
+                    card_name=get_card_name(cards[0]),
+                    interpretation=cleaned_answer,
+                ))
+                await db.execute(
+                    update(TarotSession)
+                    .where(TarotSession.id == req.session_id)
+                    .values(cycle_count=cycle_count)
+                )
+                await db.commit()
 
             cycle_data = await redis_service.get(_cycle_data_key(req.session_id)) or []
-            cycle_data.append({
-                "cards": cards,
-                "question": question,
-                "answer": cleaned_answer,
-            })
-            await redis_service.set(_cycle_data_key(req.session_id), cycle_data, ttl=SESSION_TTL)
+            # A resumed cycle may already be in the list.
+            if len(cycle_data) < cycle_count:
+                cycle_data.append({
+                    "cards": cards,
+                    "question": question,
+                    "answer": cleaned_answer,
+                })
+                await redis_service.set(_cycle_data_key(req.session_id), cycle_data, ttl=SESSION_TTL)
 
-            await reading_service.complete_cycle(req.session_id)
+            await reading_service.complete_cycle(req.session_id, cycle_count)
         except Exception:
             logger.exception("Interpretation failed: session=%s", req.session_id)
             try:
@@ -417,7 +434,7 @@ async def reading_synthesis(
         raise HTTPException(status_code=404, detail="Reading not found")
 
     if state != ReadingState.COMPLETED:
-        await reading_service.end(req.session_id)
+        await _apply_transition(reading_service.end, req.session_id)
 
     cycles = await redis_service.get(_cycle_data_key(req.session_id)) or []
     if not cycles:
@@ -428,23 +445,29 @@ async def reading_synthesis(
         user_name=user.real_name,
     )
 
+    # An LLM failure must not archive the reading: it stays active and in ЗАВЕРШЕНО,
+    # so /synthesis can simply be called again.
     full_response = []
-    async for chunk in stream_prediction(
-        cards=[],
-        question="",
-        user_name=user.real_name,
-        custom_messages=custom_messages,
-    ):
-        full_response.append(chunk)
+    try:
+        async for chunk in stream_prediction(
+            cards=[],
+            question="",
+            user_name=user.real_name,
+            custom_messages=custom_messages,
+        ):
+            full_response.append(chunk)
+    except Exception:
+        logger.exception("Synthesis failed: session=%s", req.session_id)
+        raise HTTPException(status_code=502, detail="Synthesis failed")
 
     raw_answer = "".join(full_response)
     cleaned_answer = clean_llm_output(raw_answer)
+    if not cleaned_answer.strip():
+        logger.error("Synthesis failed: LLM returned an empty synthesis: session=%s", req.session_id)
+        raise HTTPException(status_code=502, detail="Synthesis failed")
 
     tarot_session.status = "archived"
     tarot_session.synthesis = cleaned_answer
-    await db.commit()
-
-    await _trim_old_archived_sessions(db, user.telegram_id)
     await db.commit()
 
     async def event_stream():
@@ -491,24 +514,31 @@ async def reading_history(
     request: Request, initData: str = Depends(_get_init_data), db: AsyncSession = Depends(get_db)
 ):
     user = await _get_user_from_init_data(initData, db)
+    limit = settings.HISTORY_LIMIT_PREMIUM if _is_premium(user) else settings.HISTORY_LIMIT_FREE
 
     sessions_result = await db.execute(
         select(TarotSession)
         .where(TarotSession.user_id == user.telegram_id)
         .where(TarotSession.status == "archived")
         .order_by(TarotSession.created_at.desc())
-        .limit(3)
+        .limit(limit)
     )
     sessions = sessions_result.scalars().all()
 
-    readings = []
-    for session in sessions:
+    # One query for the cycles of every returned session.
+    cycles_by_session: dict[str, list[ReadingCycle]] = {s.id: [] for s in sessions}
+    if sessions:
         cycles_result = await db.execute(
             select(ReadingCycle)
-            .where(ReadingCycle.session_id == session.id)
-            .order_by(ReadingCycle.cycle_number)
+            .where(ReadingCycle.session_id.in_(list(cycles_by_session)))
+            .order_by(ReadingCycle.session_id, ReadingCycle.cycle_number)
         )
-        cycles = cycles_result.scalars().all()
+        for cycle in cycles_result.scalars().all():
+            cycles_by_session[cycle.session_id].append(cycle)
+
+    readings = []
+    for session in sessions:
+        cycles = cycles_by_session[session.id]
 
         readings.append(ReadingHistoryItem(
             session_id=session.id,

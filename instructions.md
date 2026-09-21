@@ -110,6 +110,8 @@ CREATE TABLE chat\_histories (
 
 \### Пункт 2. Контроль доступа и Paywall (Проверка прав)
 
+\*\*\[УДАЛЕНО 2026-09-21]\*\* Эндпоинт `GET /api/v1/tarot/check-access` удалён из бэкенда (удалены `routes/tarot.py` и `routes/sessions.py`, таблица `chat\_histories` снята миграцией `e3f4a5b6c7d8`). Описание ниже оставлено только как историческая справка; актуальный флоу — циклический расклад `/api/v1/tarot/reading/\*`.
+
 \* \*\*Эндпоинт:\*\* `GET /api/v1/tarot/check-access`
 
 \* \*\*Логика работы:\*\* Перед отправкой вопроса пользователя бэкенд проверяет условие: `subscription\_ends\_at > NOW() OR free\_requests\_left > 0`.
@@ -119,6 +121,8 @@ CREATE TABLE chat\_histories (
 
 
 \### Пункт 3. Механика интерактивного расклада Таро
+
+\*\*\[УДАЛЕНО 2026-09-21]\*\* Эндпоинт `POST /api/v1/tarot/draw` удалён из бэкенда (удалены `routes/tarot.py` и `routes/sessions.py`, таблица `chat\_histories` снята миграцией `e3f4a5b6c7d8`). Описание ниже оставлено только как историческая справка; актуальный флоу — циклический расклад `/api/v1/tarot/reading/\*`.
 
 \* \*\*Эндпоинт:\*\* `POST /api/v1/tarot/draw`
 
@@ -131,6 +135,8 @@ CREATE TABLE chat\_histories (
 
 
 \### Пункт 4. Трактовка расклада ИИ и Стриминг текста
+
+\*\*\[УДАЛЕНО 2026-09-21]\*\* Эндпоинт `POST /api/v1/tarot/predict/stream` удалён из бэкенда (удалены `routes/tarot.py` и `routes/sessions.py`, таблица `chat\_histories` снята миграцией `e3f4a5b6c7d8`). Описание ниже оставлено только как историческая справка; актуальный флоу — циклический расклад `/api/v1/tarot/reading/\*`.
 
 \* \*\*Эндпоинт:\*\* `POST /api/v1/tarot/predict/stream`
 
@@ -149,6 +155,8 @@ CREATE TABLE chat\_histories (
 
 
 \### Пункт 5. Управление контекстом сессий
+
+\*\*\[УДАЛЕНО 2026-09-21]\*\* Эндпоинт `POST /api/v1/sessions/close` удалён из бэкенда (удалены `routes/tarot.py` и `routes/sessions.py`, таблица `chat\_histories` снята миграцией `e3f4a5b6c7d8`). Описание ниже оставлено только как историческая справка; актуальный флоу — циклический расклад `/api/v1/tarot/reading/\*`.
 
 \* \*\*Эндпоинт:\*\* `POST /api/v1/sessions/close`
 

@@ -10,9 +10,9 @@ from slowapi.errors import RateLimitExceeded
 from rate_limiter import limiter
 
 from config import settings
-from database import init_db
+from database import check_schema_revision
 from logging_config import setup_logging
-from routes import astrology_router, tarot_router, sessions_router, reading_router, auth_router
+from routes import astrology_router, reading_router, auth_router
 from services.redis import redis_service
 
 logger = logging.getLogger(__name__)
@@ -46,8 +46,8 @@ async def lifespan(app: FastAPI):
                 f"({', '.join(public_origins)}). Set DEV_MODE=false, or remove the "
                 "public origins for local development."
             )
-    await init_db()
-    logger.info("Database initialized")
+    revision = await check_schema_revision()
+    logger.info(f"Database schema is at head revision {revision}")
     try:
         await redis_service.connect()
     except Exception as e:
@@ -71,8 +71,6 @@ app.add_middleware(
 )
 
 app.include_router(astrology_router)
-app.include_router(tarot_router)
-app.include_router(sessions_router)
 app.include_router(reading_router)
 app.include_router(auth_router)
 # app.include_router(payments_router)

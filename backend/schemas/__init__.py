@@ -1,11 +1,7 @@
 from schemas.tarot import (
     AstrologyBonusRequest,
     AstrologyBonusResponse,
-    CheckAccessResponse,
     CycleHistory,
-    DrawRequest,
-    DrawResponse,
-    PredictRequest,
     ReadingActiveResponse,
     ReadingAskRequest,
     ReadingDrawRequest,
@@ -18,17 +14,12 @@ from schemas.tarot import (
     ReadingStartResponse,
     ReadingStateResponse,
     ReadingSynthesisRequest,
-    SessionCloseRequest,
 )
 
 __all__ = [
     "AstrologyBonusRequest",
     "AstrologyBonusResponse",
-    "CheckAccessResponse",
     "CycleHistory",
-    "DrawRequest",
-    "DrawResponse",
-    "PredictRequest",
     "ReadingActiveResponse",
     "ReadingAskRequest",
     "ReadingDrawRequest",
@@ -41,5 +32,4 @@ __all__ = [
     "ReadingStartResponse",
     "ReadingStateResponse",
     "ReadingSynthesisRequest",
-    "SessionCloseRequest",
 ]

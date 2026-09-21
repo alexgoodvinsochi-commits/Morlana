@@ -9,10 +9,12 @@ from alembic import context
 
 from config import settings
 from database import Base
-from models import User, TarotSession, ChatHistory, ReadingCycle
+from models import User, TarotSession, ReadingCycle  # noqa: F401  (registers the tables on Base.metadata)
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# The URL always comes from the application settings (DATABASE_URL), never from
+# alembic.ini. "%" is doubled because configparser treats it as interpolation.
+config.set_main_option("sqlalchemy.url", settings.DATABASE_URL.replace("%", "%%"))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -27,13 +29,19 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        compare_server_default=True,
     )
     with context.begin_transaction():
         context.run_migrations()
 
 
 def do_run_migrations(connection):
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        # `alembic check` must also catch drift in server defaults.
+        compare_server_default=True,
+    )
     with context.begin_transaction():
         context.run_migrations()
 

@@ -1,0 +1,5 @@
+# Correctness only: syntax errors (E9) and pyflakes (F). No formatting rules.
+target-version = "py312"
+
+[lint]
+select = ["E9", "F"]

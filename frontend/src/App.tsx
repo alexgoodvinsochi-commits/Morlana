@@ -17,7 +17,10 @@ interface AppState {
 
 const STORAGE_KEY = 'morlana_state';
 
-const VALID_SCREENS: Screen[] = ['login', 'onboarding', 'dashboard'];
+const VALID_SCREENS: Screen[] = ['login', 'onboarding', 'dashboard', 'reading', 'history'];
+
+/* Screens that only make sense for a logged-in user */
+const AUTH_SCREENS: Screen[] = ['dashboard', 'reading', 'history'];
 
 function loadState(): AppState | null {
   if (new URLSearchParams(window.location.search).get('reset') === '1') {
@@ -32,7 +35,11 @@ function loadState(): AppState | null {
       localStorage.removeItem(STORAGE_KEY);
       return null;
     }
-    return parsed;
+    const userLogin = typeof parsed.userLogin === 'string' ? parsed.userLogin : null;
+    const userName = typeof parsed.userName === 'string' ? parsed.userName : null;
+    const screen: Screen =
+      AUTH_SCREENS.includes(parsed.screen) && !userLogin ? 'login' : parsed.screen;
+    return { screen, userLogin, userName };
   } catch {
     localStorage.removeItem(STORAGE_KEY);
     return null;
@@ -53,6 +60,9 @@ function App() {
     const saved = loadState();
     return saved || { screen: 'login', userLogin: null, userName: null };
   });
+  /* «Новый расклад» на главной начинает расклад с нуля, а вкладка «Расклад»
+     в нижнем меню продолжает незаконченный. Флаг не сохраняется в localStorage. */
+  const [freshReading, setFreshReading] = useState(false);
 
   useEffect(() => {
     saveState(state);
@@ -79,10 +89,16 @@ function App() {
     if (screen === 'home') {
       setState((prev) => ({ ...prev, screen: 'dashboard' }));
     } else if (screen === 'reading') {
+      setFreshReading(false);
       setState((prev) => ({ ...prev, screen: 'reading' }));
     } else if (screen === 'history') {
       setState((prev) => ({ ...prev, screen: 'history' }));
     }
+  };
+
+  const handleNewReading = () => {
+    setFreshReading(true);
+    setState((prev) => ({ ...prev, screen: 'reading' }));
   };
 
   const handleExitReading = () => {
@@ -96,11 +112,15 @@ function App() {
     <div className="app">
       <div className="app-content">
         {state.screen === 'login' && (
-          <LoginScreen onLogin={handleLogin} onRegister={handleRegister} />
+          <LoginScreen initData={initData} onLogin={handleLogin} onRegister={handleRegister} />
         )}
 
         {state.screen === 'onboarding' && (
-          <Onboarding initData={initData} onComplete={handleOnboardingComplete} />
+          <Onboarding
+            initData={initData}
+            onComplete={handleOnboardingComplete}
+            onBack={() => setState((prev) => ({ ...prev, screen: 'login' }))}
+          />
         )}
 
         {state.screen === 'dashboard' && state.userLogin && (
@@ -108,12 +128,18 @@ function App() {
             initData={initData}
             userLogin={state.userLogin}
             onLogout={handleLogout}
-            onNewReading={() => handleNavigate('reading')}
+            onNewReading={handleNewReading}
+            onOpenHistory={() => handleNavigate('history')}
           />
         )}
 
         {state.screen === 'reading' && (
-          <ReadingScreen initData={initData} onExit={handleExitReading} />
+          <ReadingScreen
+            initData={initData}
+            onExit={handleExitReading}
+            onHistory={() => handleNavigate('history')}
+            startFresh={freshReading}
+          />
         )}
 
         {state.screen === 'history' && (

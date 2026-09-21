@@ -27,6 +27,22 @@ class UTF8JSONResponse(JSONResponse):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting Morlana backend...")
+    if settings.DEV_MODE:
+        logger.warning(
+            "DEV_MODE is enabled: unsigned Telegram initData is accepted as the "
+            "dev account. Never expose this instance publicly."
+        )
+        public_origins = [
+            origin.strip()
+            for origin in settings.CORS_ORIGINS.split(",")
+            if origin.strip() and "localhost" not in origin and "127.0.0.1" not in origin
+        ]
+        if public_origins:
+            logger.error(
+                "DEV_MODE is enabled while CORS_ORIGINS points at non-local origins (%s). "
+                "Set DEV_MODE=false before publishing this instance (ngrok, tunnel, host).",
+                ", ".join(public_origins),
+            )
     await init_db()
     logger.info("Database initialized")
     try:

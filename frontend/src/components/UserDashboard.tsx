@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { apiGet } from '../api/client';
-import ReadingHistory from './ReadingHistory';
+import { apiGet, ApiError } from '../api/client';
 import '../styles/dashboard.css';
 
 interface UserData {
@@ -15,33 +14,69 @@ interface Props {
   userLogin: string;
   onLogout: () => void;
   onNewReading: () => void;
+  onOpenHistory: () => void;
 }
 
-export default function UserDashboard({ initData, userLogin, onLogout, onNewReading }: Props) {
+function errorMessage(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.status === 401) {
+      return 'Не удалось подтвердить Telegram. Откройте Morlana из Telegram.';
+    }
+    if (err.status === 429) {
+      return 'Слишком много попыток. Подождите минуту.';
+    }
+  }
+  return 'Не удалось загрузить профиль. Попробуйте позже.';
+}
+
+export default function UserDashboard({
+  initData,
+  userLogin,
+  onLogout,
+  onNewReading,
+  onOpenHistory,
+}: Props) {
   const [user, setUser] = useState<UserData | null>(null);
-  const [showHistory, setShowHistory] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
+    let cancelled = false;
+
     const loadUser = async () => {
+      setLoading(true);
+      setError('');
       try {
-        const data = await apiGet<UserData>(
-          `/api/v1/auth/me?login=${userLogin}`,
-          initData,
-        );
+        const data = await apiGet<UserData>('/api/v1/auth/me', initData);
+        if (cancelled) return;
+        if (data.login !== userLogin) {
+          // The Telegram account no longer matches the login we are showing.
+          onLogout();
+          return;
+        }
         setUser(data);
-      } catch {
-        // ignore
+      } catch (err) {
+        if (cancelled) return;
+        if (err instanceof ApiError && err.status === 404) {
+          onLogout();
+          return;
+        }
+        setUser(null);
+        setError(errorMessage(err));
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
-    loadUser();
-  }, [initData, userLogin]);
 
-  if (showHistory) {
-    return <ReadingHistory initData={initData} onBack={() => setShowHistory(false)} />;
-  }
+    loadUser();
+
+    return () => {
+      cancelled = true;
+    };
+    // onLogout is intentionally not a dependency: it is recreated on every
+    // App render and would restart the request loop.
+  }, [initData, userLogin, attempt]);
 
   if (loading) {
     return (
@@ -53,15 +88,26 @@ export default function UserDashboard({ initData, userLogin, onLogout, onNewRead
     );
   }
 
+  if (!user) {
+    return (
+      <div className="dashboard">
+        <div className="error-msg">
+          <p>{error || 'Не удалось загрузить профиль. Попробуйте позже.'}</p>
+          <button onClick={() => setAttempt((n) => n + 1)}>Повторить</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="dashboard">
       <div className="dashboard-header">
         <div className="user-avatar">
-          {user?.real_name?.charAt(0).toUpperCase() || '?'}
+          {user.real_name?.charAt(0).toUpperCase() || '?'}
         </div>
-        <h2>{user?.real_name || 'Пользователь'}</h2>
-        <p className="user-login">@{user?.login}</p>
-        {user?.gender && (
+        <h2>{user.real_name}</h2>
+        <p className="user-login">@{user.login}</p>
+        {user.gender && (
           <p className="user-gender">{user.gender === 'female' ? 'Женский' : 'Мужской'}</p>
         )}
       </div>
@@ -70,7 +116,7 @@ export default function UserDashboard({ initData, userLogin, onLogout, onNewRead
         <button onClick={onNewReading} className="dashboard-btn primary">
           Новый расклад
         </button>
-        <button onClick={() => setShowHistory(true)} className="dashboard-btn">
+        <button onClick={onOpenHistory} className="dashboard-btn">
           Мои расклады
         </button>
         <button onClick={onLogout} className="dashboard-btn danger">

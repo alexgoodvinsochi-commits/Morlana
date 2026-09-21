@@ -6,11 +6,60 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 import os
 
-pdfmetrics.registerFont(TTFont('Arial', 'C:/Windows/Fonts/arial.ttf'))
-pdfmetrics.registerFont(TTFont('ArialBold', 'C:/Windows/Fonts/arialbd.ttf'))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CARDS_DIR = os.path.join(BASE_DIR, "frontend", "public", "decks", "rider-waite")
+OUTPUT = os.path.join(BASE_DIR, "cards.pdf")
 
-CARDS_DIR = os.path.join(os.path.dirname(__file__), "frontend", "public")
-OUTPUT = os.path.join(os.path.dirname(__file__), "cards.pdf")
+# Any TTF with Cyrillic coverage works; override with CARDS_PDF_FONT.
+FONT_CANDIDATES = [
+    "C:/Windows/Fonts/arial.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/Library/Fonts/Arial.ttf",
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
+]
+BOLD_BY_REGULAR = {
+    "C:/Windows/Fonts/arial.ttf": "C:/Windows/Fonts/arialbd.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf": "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/Library/Fonts/Arial.ttf": "/Library/Fonts/Arial Bold.ttf",
+    "/System/Library/Fonts/Supplemental/Arial.ttf": "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+}
+
+
+def resolve_regular_font():
+    env_font = os.environ.get("CARDS_PDF_FONT")
+    if env_font:
+        if not os.path.exists(env_font):
+            raise SystemExit(f"CARDS_PDF_FONT points to a missing file: {env_font}")
+        return env_font
+    for path in FONT_CANDIDATES:
+        if os.path.exists(path):
+            return path
+    raise SystemExit(
+        "No TTF font found. Set CARDS_PDF_FONT to a font with Cyrillic coverage "
+        "(e.g. CARDS_PDF_FONT=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf).\n"
+        "Checked: " + ", ".join(FONT_CANDIDATES)
+    )
+
+
+def resolve_bold_font(regular):
+    env_bold = os.environ.get("CARDS_PDF_FONT_BOLD")
+    if env_bold:
+        if not os.path.exists(env_bold):
+            raise SystemExit(f"CARDS_PDF_FONT_BOLD points to a missing file: {env_bold}")
+        return env_bold
+    root, ext = os.path.splitext(regular)
+    candidates = [BOLD_BY_REGULAR.get(regular), root + "bd" + ext, root + "-Bold" + ext, root + " Bold" + ext]
+    for path in candidates:
+        if path and os.path.exists(path):
+            return path
+    # Not fatal: fall back to the regular face so the PDF still renders.
+    return regular
+
+
+FONT_REGULAR = resolve_regular_font()
+FONT_BOLD = resolve_bold_font(FONT_REGULAR)
+pdfmetrics.registerFont(TTFont('Arial', FONT_REGULAR))
+pdfmetrics.registerFont(TTFont('ArialBold', FONT_BOLD))
 
 MAJOR = [
     "Шут", "Маг", "Верховная Жрица", "Императрица", "Император",

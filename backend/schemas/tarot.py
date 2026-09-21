@@ -60,6 +60,11 @@ class ReadingStartResponse(BaseModel):
     state: str
 
 
+class ReadingActiveResponse(BaseModel):
+    session_id: str | None = None
+    state: str | None = None
+
+
 class ReadingAskRequest(BaseModel):
     session_id: str
     question: str

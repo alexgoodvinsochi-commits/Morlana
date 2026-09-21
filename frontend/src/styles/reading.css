@@ -261,10 +261,64 @@
   margin-top: 16px;
 }
 
+/* === Question Input === */
+.input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.input-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 16px;
+  border: 1px solid rgba(196, 162, 101, 0.3);
+  border-radius: 25px;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #d4c5a9;
+  font-family: 'Almendra', serif;
+  font-size: 16px;
+  transition: all 0.2s;
+}
+
+.input-row input:focus {
+  outline: none;
+  border-color: #c4a265;
+  box-shadow: 0 0 16px rgba(196, 162, 101, 0.2);
+}
+
+.input-row input::placeholder {
+  color: #6b5d4a;
+}
+
+.input-row input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Кнопка внутри строки ввода не растягивается на всю ширину. */
+.input-row button {
+  width: auto;
+  flex-shrink: 0;
+  padding: 12px 24px;
+}
+
 .reading-status {
   text-align: center;
   color: #a89878;
   padding: 16px;
+}
+
+.interpret-retry {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.interpret-retry .reading-status {
+  padding: 0 0 4px;
 }
 
 .cycle-complete-actions {

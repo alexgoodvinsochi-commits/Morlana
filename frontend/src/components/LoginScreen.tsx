@@ -1,13 +1,35 @@
 import { useState } from 'react';
-import { apiPost } from '../api/client';
+import { apiPost, ApiError } from '../api/client';
 import '../styles/onboarding.css';
 
+interface AuthResponse {
+  telegram_id: number;
+  real_name: string;
+  gender: string | null;
+  login: string;
+}
+
 interface Props {
+  initData: string;
   onLogin: (data: { login: string; real_name: string }) => void;
   onRegister: () => void;
 }
 
-export default function LoginScreen({ onLogin, onRegister }: Props) {
+function errorMessage(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.status === 401) {
+      return err.detail === 'Invalid login or password'
+        ? 'Неверный логин или пароль'
+        : 'Не удалось подтвердить Telegram. Откройте Morlana из Telegram.';
+    }
+    if (err.status === 429) {
+      return 'Слишком много попыток. Подождите минуту.';
+    }
+  }
+  return 'Ошибка сети или сервера. Попробуйте позже.';
+}
+
+export default function LoginScreen({ initData, onLogin, onRegister }: Props) {
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -24,13 +46,14 @@ export default function LoginScreen({ onLogin, onRegister }: Props) {
     setError('');
 
     try {
-      const data = await apiPost<{ real_name: string }>(
+      const data = await apiPost<AuthResponse>(
         '/api/v1/auth/login',
         { login: login.trim(), password },
+        initData,
       );
-      onLogin({ login: login.trim(), real_name: data.real_name });
-    } catch {
-      setError('Неверный логин или пароль');
+      onLogin({ login: data.login, real_name: data.real_name });
+    } catch (err) {
+      setError(errorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -66,7 +89,7 @@ export default function LoginScreen({ onLogin, onRegister }: Props) {
 
         {error && <p className="error">{error}</p>}
 
-        <button type="submit" disabled={loading} className="submit-btn">
+        <button type="submit" disabled={loading} aria-busy={loading} className="submit-btn">
           {loading ? 'Загрузка...' : 'Войти'}
         </button>
       </form>

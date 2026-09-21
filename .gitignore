@@ -11,3 +11,4 @@ dist/
 backend/alembic/versions/*.pyc
 ngrok_out.txt
 ngrok_err.txt
+cards.pdf

@@ -29,26 +29,48 @@ export default function ReadingHistory({ initData, onBack }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
+    let cancelled = false;
+
     const loadHistory = async () => {
+      // initData приходит пустым на первом рендере, поэтому повторный запрос
+      // должен убирать ошибку предыдущей попытки.
+      setLoading(true);
+      setError('');
       try {
         const data = await apiGet<{ readings: ReadingHistoryItem[] }>(
           '/api/v1/tarot/reading/history',
           initData,
         );
+        if (cancelled) return;
         setReadings(data.readings);
       } catch {
+        if (cancelled) return;
         setError('Не удалось загрузить историю.');
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
+
     loadHistory();
-  }, [initData]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initData, attempt]);
 
   if (loading) return <div className="reading-loading"><span className="spinner" /> Загрузка...</div>;
-  if (error) return <div className="error-msg"><p>{error}</p><button onClick={onBack}>Назад</button></div>;
+  if (error) {
+    return (
+      <div className="error-msg">
+        <p>{error}</p>
+        <button onClick={() => setAttempt((n) => n + 1)}>Повторить</button>
+        <button onClick={onBack}>Назад</button>
+      </div>
+    );
+  }
 
   return (
     <div className="reading-history-screen">

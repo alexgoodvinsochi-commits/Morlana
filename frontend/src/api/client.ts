@@ -1,5 +1,17 @@
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
+export class ApiError extends Error {
+  status: number;
+  detail?: string;
+
+  constructor(status: number, detail?: string) {
+    super(`API error: ${status}`);
+    this.name = 'ApiError';
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
 function buildUrl(path: string): string {
   const base = API_BASE ? API_BASE.replace(/\/$/, '') : window.location.origin;
   const sep = path.startsWith('/') ? '' : '/';
@@ -14,6 +26,19 @@ function buildHeaders(initData?: string): Record<string, string> {
   return headers;
 }
 
+async function toApiError(res: Response): Promise<ApiError> {
+  let detail: string | undefined;
+  try {
+    const body = await res.json();
+    if (body && typeof body.detail === 'string') {
+      detail = body.detail;
+    }
+  } catch {
+    // body is missing or not JSON — status alone describes the error
+  }
+  return new ApiError(res.status, detail);
+}
+
 export async function apiPost<T>(path: string, body: Record<string, unknown>, initData?: string): Promise<T> {
   const url = buildUrl(path);
 
@@ -24,7 +49,7 @@ export async function apiPost<T>(path: string, body: Record<string, unknown>, in
   });
 
   if (!res.ok) {
-    throw new Error(`API error: ${res.status}`);
+    throw await toApiError(res);
   }
 
   return res.json();
@@ -38,7 +63,7 @@ export async function apiGet<T>(path: string, initData?: string): Promise<T> {
   });
 
   if (!res.ok) {
-    throw new Error(`API error: ${res.status}`);
+    throw await toApiError(res);
   }
 
   return res.json();
@@ -61,7 +86,7 @@ export async function apiStream(
   });
 
   if (!res.ok) {
-    throw new Error(`API error: ${res.status}`);
+    throw await toApiError(res);
   }
 
   const reader = res.body?.getReader();

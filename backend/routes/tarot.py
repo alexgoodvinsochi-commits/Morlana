@@ -87,6 +87,9 @@ async def tarot_predict_stream(request: Request, req: PredictRequest, initData: 
         .where(TarotSession.id == req.session_id, TarotSession.status == "active")
     )
     session = session_result.scalar_one_or_none()
+    if session and session.user_id != telegram_id:
+        # Someone else's reading gets the same answer as a missing one.
+        raise HTTPException(status_code=404, detail="Session not found")
     if not session:
         session = TarotSession(id=req.session_id, user_id=telegram_id, status="active")
         db.add(session)

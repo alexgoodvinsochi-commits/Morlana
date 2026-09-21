@@ -63,6 +63,7 @@ export default function Paywall({ freeRequestsLeft }: Props) {
           <button
             onClick={() => handleSubscribe('monthly')}
             disabled={loading !== null}
+            aria-busy={loading === 'monthly'}
           >
             {loading === 'monthly' ? 'Загрузка...' : 'Оформить'}
           </button>
@@ -78,6 +79,7 @@ export default function Paywall({ freeRequestsLeft }: Props) {
           <button
             onClick={() => handleSubscribe('quarterly')}
             disabled={loading !== null}
+            aria-busy={loading === 'quarterly'}
           >
             {loading === 'quarterly' ? 'Загрузка...' : 'Оформить'}
           </button>

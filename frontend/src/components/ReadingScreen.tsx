@@ -19,40 +19,85 @@ interface ReadingState {
   current_card: number | null;
 }
 
+interface ActiveReading {
+  session_id: string | null;
+  state: string | null;
+}
+
 interface Props {
   initData: string;
   onExit: () => void;
-  onHistory?: () => void;
+  onHistory: () => void;
+  /* Открыто кнопкой «Новый расклад»: начинаем с нуля, не продолжая прошлый. */
+  startFresh?: boolean;
 }
 
-export default function ReadingScreen({ initData, onExit, onHistory }: Props) {
+/* Толкование пишется на сервере даже без открытого стрима: пока состояние
+   ИНТЕРПРЕТАЦИЯ, опрашиваем состояние, а после лимита предлагаем повтор. */
+const INTERPRET_POLL_MS = 3000;
+const INTERPRET_MAX_POLLS = 20;
+
+export default function ReadingScreen({ initData, onExit, onHistory, startFresh = false }: Props) {
   const [reading, setReading] = useState<ReadingState | null>(null);
   const [question, setQuestion] = useState('');
   const [loading, setLoading] = useState(false);
   const [streamText, setStreamText] = useState('');
   const [error, setError] = useState('');
   const [synthesisText, setSynthesisText] = useState('');
+  const [interpretFailed, setInterpretFailed] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const interpretationRef = useRef<HTMLDivElement>(null);
+  const isMountedRef = useRef(true);
+  // Стрим толкования/синтеза идёт прямо сейчас — опрос состояния не нужен.
+  const streamingRef = useRef(false);
+  /* Сбрасывается только после успешного /start: первый рендер приходит с пустым
+     initData, и та попытка не должна съедать запрос на новый расклад. */
+  const startFreshRef = useRef(startFresh);
 
-  const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
   }, []);
 
   useEffect(() => {
-    scrollToBottom();
-  }, [reading, streamText, synthesisText, scrollToBottom]);
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [reading, streamText, synthesisText]);
 
-  const fetchState = useCallback(async (sessionId: string) => {
+  useEffect(() => {
+    const scroll = interpretationRef.current;
+    if (scroll) {
+      scroll.scrollTop = scroll.scrollHeight;
+    }
+  }, [streamText, synthesisText]);
+
+  const fetchState = useCallback(async (sessionId: string): Promise<ReadingState | null> => {
     try {
       const state = await apiGet<ReadingState>(
         `/api/v1/tarot/reading/state?session_id=${sessionId}`,
         initData,
       );
-      setReading(state);
+      if (isMountedRef.current) {
+        setReading(state);
+      }
+      return state;
     } catch {
-      setError('Не удалось загрузить состояние расклада.');
+      if (isMountedRef.current) {
+        setError('Не удалось загрузить состояние расклада.');
+      }
+      return null;
     }
   }, [initData]);
+
+  /* Ответ уже лежит в цикле на сервере (возврат на вкладку, фоновое толкование) —
+     показываем его, если локальный стрим ничего не принёс. */
+  const showLastAnswer = useCallback((state: ReadingState) => {
+    const lastAnswer = state.cycles[state.cycles.length - 1]?.answer;
+    if (lastAnswer && isMountedRef.current) {
+      setStreamText((prev) => prev || lastAnswer);
+    }
+  }, []);
 
   const startReading = useCallback(async () => {
     setLoading(true);
@@ -63,17 +108,94 @@ export default function ReadingScreen({ initData, onExit, onHistory }: Props) {
         {},
         initData,
       );
+      if (!isMountedRef.current) return;
       await fetchState(data.session_id);
     } catch {
-      setError('Не удалось начать расклад.');
+      if (isMountedRef.current) {
+        setError('Не удалось начать расклад.');
+      }
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   }, [initData, fetchState]);
 
+  /* Возврат на вкладку не теряет расклад: сначала спрашиваем у сервера,
+     есть ли незавершённый, и только потом начинаем новый. */
   useEffect(() => {
-    startReading();
-  }, [startReading]);
+    let cancelled = false;
+
+    const resume = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        if (!startFreshRef.current) {
+          const active = await apiGet<ActiveReading>('/api/v1/tarot/reading/active', initData);
+          if (cancelled) return;
+
+          if (active.session_id) {
+            const state = await fetchState(active.session_id);
+            if (cancelled || !state) return;
+            if (state.state === 'ГОТОВО' || state.state === 'ЗАВЕРШЕНО') {
+              showLastAnswer(state);
+            }
+            return;
+          }
+        }
+
+        const data = await apiPost<{ session_id: string; state: string }>(
+          '/api/v1/tarot/reading/start',
+          {},
+          initData,
+        );
+        startFreshRef.current = false;
+        if (cancelled) return;
+        await fetchState(data.session_id);
+      } catch {
+        if (!cancelled && isMountedRef.current) {
+          setError('Не удалось начать расклад.');
+        }
+      } finally {
+        if (!cancelled && isMountedRef.current) {
+          setLoading(false);
+        }
+      }
+    };
+
+    resume();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initData, fetchState, showLastAnswer]);
+
+  /* Толкование могло уйти в фон (закрытая вкладка, оборванный стрим):
+     подтягиваем состояние, пока сервер не допишет ответ. */
+  useEffect(() => {
+    const sessionId = reading?.session_id;
+    if (!sessionId || reading?.state !== 'ИНТЕРПРЕТАЦИЯ') return;
+    if (streamingRef.current || interpretFailed) return;
+
+    let polls = 0;
+    const timer = setInterval(async () => {
+      polls += 1;
+      if (polls > INTERPRET_MAX_POLLS) {
+        clearInterval(timer);
+        if (isMountedRef.current) {
+          setInterpretFailed(true);
+        }
+        return;
+      }
+      const refreshed = await fetchState(sessionId);
+      if (refreshed && refreshed.state !== 'ИНТЕРПРЕТАЦИЯ') {
+        clearInterval(timer);
+        showLastAnswer(refreshed);
+      }
+    }, INTERPRET_POLL_MS);
+
+    return () => clearInterval(timer);
+  }, [reading?.session_id, reading?.state, interpretFailed, fetchState, showLastAnswer]);
 
   const handleAsk = async () => {
     if (!question.trim() || !reading || loading) return;
@@ -85,12 +207,17 @@ export default function ReadingScreen({ initData, onExit, onHistory }: Props) {
         { session_id: reading.session_id, question: question.trim() },
         initData,
       );
+      if (!isMountedRef.current) return;
       setQuestion('');
       await fetchState(reading.session_id);
     } catch {
-      setError('Не удалось задать вопрос.');
+      if (isMountedRef.current) {
+        setError('Не удалось задать вопрос.');
+      }
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -104,75 +231,118 @@ export default function ReadingScreen({ initData, onExit, onHistory }: Props) {
         { session_id: reading.session_id },
         initData,
       );
+      if (!isMountedRef.current) return;
       await fetchState(reading.session_id);
     } catch {
-      setError('Не удалось вытянуть карту.');
+      if (isMountedRef.current) {
+        setError('Не удалось вытянуть карту.');
+      }
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   };
 
   const handleInterpret = async () => {
     if (!reading || loading) return;
+    const sessionId = reading.session_id;
     setLoading(true);
     setError('');
+    setInterpretFailed(false);
     setStreamText('');
+    streamingRef.current = true;
 
     try {
       await apiStream(
         '/api/v1/tarot/reading/interpret',
-        { session_id: reading.session_id },
+        { session_id: sessionId },
         initData,
         (chunk) => {
-          setStreamText((prev) => prev + chunk);
+          if (isMountedRef.current) {
+            setStreamText((prev) => prev + chunk);
+          }
         },
         () => {
-          setLoading(false);
-          fetchState(reading.session_id);
+          streamingRef.current = false;
+          if (isMountedRef.current) {
+            setLoading(false);
+          }
+          // Стрим мог оборваться без ответа — тогда состояние осталось ИНТЕРПРЕТАЦИЯ.
+          fetchState(sessionId).then((refreshed) => {
+            if (!isMountedRef.current || !refreshed) return;
+            if (refreshed.state === 'ИНТЕРПРЕТАЦИЯ') {
+              setError('Не удалось получить толкование.');
+              setInterpretFailed(true);
+            } else {
+              showLastAnswer(refreshed);
+            }
+          });
         },
         (cleaned) => {
-          setStreamText(cleaned);
+          if (isMountedRef.current) {
+            setStreamText(cleaned);
+          }
         },
       );
     } catch {
-      setError('Не удалось получить толкование.');
-      setLoading(false);
+      streamingRef.current = false;
+      if (isMountedRef.current) {
+        setError('Не удалось получить толкование.');
+        setInterpretFailed(true);
+        setLoading(false);
+      }
+      fetchState(sessionId);
     }
   };
 
   const handleSynthesis = async () => {
     if (!reading || loading) return;
+    const sessionId = reading.session_id;
     setLoading(true);
     setError('');
     setSynthesisText('');
+    streamingRef.current = true;
 
     try {
       await apiStream(
         '/api/v1/tarot/reading/synthesis',
-        { session_id: reading.session_id },
+        { session_id: sessionId },
         initData,
         (chunk) => {
-          setSynthesisText((prev) => prev + chunk);
+          if (isMountedRef.current) {
+            setSynthesisText((prev) => prev + chunk);
+          }
         },
         () => {
-          setLoading(false);
-          fetchState(reading.session_id);
+          streamingRef.current = false;
+          if (isMountedRef.current) {
+            setLoading(false);
+          }
+          fetchState(sessionId);
         },
         (cleaned) => {
-          setSynthesisText(cleaned);
+          if (isMountedRef.current) {
+            setSynthesisText(cleaned);
+          }
         },
       );
     } catch {
-      setError('Не удалось получить синтез.');
-      setLoading(false);
+      streamingRef.current = false;
+      if (isMountedRef.current) {
+        setError('Не удалось получить синтез.');
+        setLoading(false);
+      }
     }
   };
 
   const handleNewReading = async () => {
+    if (loading) return;
     setStreamText('');
     setSynthesisText('');
     setQuestion('');
     setError('');
+    setInterpretFailed(false);
     await startReading();
   };
 
@@ -181,17 +351,23 @@ export default function ReadingScreen({ initData, onExit, onHistory }: Props) {
     setLoading(true);
     setError('');
     setStreamText('');
+    setInterpretFailed(false);
     try {
       await apiPost(
         '/api/v1/tarot/reading/next',
         { session_id: reading.session_id },
         initData,
       );
+      if (!isMountedRef.current) return;
       await fetchState(reading.session_id);
     } catch {
-      setError('Не удалось начать новый цикл.');
+      if (isMountedRef.current) {
+        setError('Не удалось начать новый цикл.');
+      }
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -210,7 +386,9 @@ export default function ReadingScreen({ initData, onExit, onHistory }: Props) {
       <div className="reading-screen">
         <div className="error-msg">
           <p>{error}</p>
-          <button onClick={handleNewReading}>Начать заново</button>
+          <button onClick={handleNewReading} disabled={loading} aria-busy={loading}>
+            Начать заново
+          </button>
         </div>
       </div>
     );
@@ -253,7 +431,7 @@ export default function ReadingScreen({ initData, onExit, onHistory }: Props) {
       {(streamText || synthesisText) && (
         <div className="interpretation-container">
           <div className="interpretation-gradient-top" />
-          <div className="interpretation-scroll" ref={messagesEndRef}>
+          <div className="interpretation-scroll" ref={interpretationRef}>
             {synthesisText && (
               <div className="synthesis-text">
                 <h3>Итоговая синтезация</h3>
@@ -273,50 +451,66 @@ export default function ReadingScreen({ initData, onExit, onHistory }: Props) {
       {/* Action Buttons */}
       <div className="reading-actions">
         {reading.state === 'ОЖИДАНИЕ' && (
-          <>
-            <div className="input-row">
-              <input
-                type="text"
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                placeholder="Задайте вопрос картам..."
-                disabled={loading}
-                onKeyDown={(e) => e.key === 'Enter' && handleAsk()}
-              />
-              <button onClick={handleAsk} disabled={loading || !question.trim()}>
-                {loading ? '...' : '→'}
-              </button>
-            </div>
-          </>
+          <div className="input-row">
+            <input
+              type="text"
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              placeholder="Задайте вопрос картам..."
+              disabled={loading}
+              onKeyDown={(e) => e.key === 'Enter' && handleAsk()}
+            />
+            <button
+              onClick={handleAsk}
+              disabled={loading || !question.trim()}
+              aria-busy={loading}
+            >
+              {loading ? '...' : '→'}
+            </button>
+          </div>
         )}
 
         {reading.state === 'ВОПРОС ЗАДАН' && (
-          <button onClick={handleDraw} disabled={loading}>
+          <button onClick={handleDraw} disabled={loading} aria-busy={loading}>
             {loading ? <><span className="spinner" /> Вытягиваю...</> : 'Вытянуть карту'}
           </button>
         )}
 
         {reading.state === 'КАРТА ВЫТЯНУТА' && (
-          <button onClick={handleInterpret} disabled={loading}>
+          <button onClick={handleInterpret} disabled={loading} aria-busy={loading}>
             {loading ? <><span className="spinner" /> Толкую...</> : 'Получить толкование'}
           </button>
         )}
 
         {reading.state === 'ИНТЕРПРЕТАЦИЯ' && (
-          <div className="reading-status">
-            <span className="spinner" /> Толкование загружается...
-          </div>
+          interpretFailed ? (
+            <div className="interpret-retry">
+              {!error && <p className="reading-status">Толкование не пришло.</p>}
+              <button onClick={handleInterpret} disabled={loading} aria-busy={loading}>
+                {loading ? <><span className="spinner" /> Толкую...</> : 'Повторить толкование'}
+              </button>
+            </div>
+          ) : (
+            <div className="reading-status">
+              <span className="spinner" /> Толкование загружается...
+            </div>
+          )
         )}
 
         {(reading.state === 'ГОТОВО' || reading.state === 'ЗАВЕРШЕНО') && (
           <div className="cycle-complete-actions">
             {reading.cycle_count < reading.max_cycles && reading.state === 'ГОТОВО' && (
-              <button onClick={handleNextCycle} disabled={loading}>
+              <button onClick={handleNextCycle} disabled={loading} aria-busy={loading}>
                 Следующий цикл
               </button>
             )}
             {!synthesisText && (
-              <button onClick={handleSynthesis} disabled={loading} className="synthesis-btn">
+              <button
+                onClick={handleSynthesis}
+                disabled={loading}
+                aria-busy={loading}
+                className="synthesis-btn"
+              >
                 {loading ? <><span className="spinner" /> Синтезирую...</> : 'Синтезировать расклад'}
               </button>
             )}
@@ -325,7 +519,9 @@ export default function ReadingScreen({ initData, onExit, onHistory }: Props) {
 
         {reading.state === 'ЗАВЕРШЕНО' && (
           <div className="reading-complete-actions">
-            <button onClick={handleNewReading}>Новый расклад</button>
+            <button onClick={handleNewReading} disabled={loading} aria-busy={loading}>
+              Новый расклад
+            </button>
             <button onClick={onHistory}>Мои расклады</button>
             <button onClick={onExit} className="exit-btn">На главную</button>
           </div>

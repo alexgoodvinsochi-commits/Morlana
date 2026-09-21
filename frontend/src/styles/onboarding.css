@@ -87,6 +87,20 @@
   background: #f0f0f0;
 }
 
+.back-btn {
+  margin-top: 10px;
+  background: transparent;
+  border: 1px solid rgba(196, 162, 101, 0.3);
+  border-radius: 25px;
+  color: #a89878;
+}
+
+.back-btn:hover {
+  background: rgba(196, 162, 101, 0.08);
+  border-color: rgba(196, 162, 101, 0.6);
+  color: #c4a265;
+}
+
 .field {
   margin-bottom: 16px;
 }

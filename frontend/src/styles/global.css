@@ -80,7 +80,8 @@ button:disabled {
   50% { opacity: 1; }
 }
 
-button:disabled:not(.submit-btn) {
+/* Пульсирует только кнопка, ждущая ответа сервера, а не любая выключенная. */
+button[aria-busy="true"] {
   animation: buttonPulse 1.5s ease-in-out infinite;
 }
 

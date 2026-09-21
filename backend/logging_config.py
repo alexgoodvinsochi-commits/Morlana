@@ -14,3 +14,7 @@ def setup_logging():
     )
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    # httpx logs every request URL at INFO; Telegram Bot API URLs embed the bot
+    # token, which is also the initData signing key.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)

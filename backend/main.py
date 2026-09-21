@@ -38,10 +38,13 @@ async def lifespan(app: FastAPI):
             if origin.strip() and "localhost" not in origin and "127.0.0.1" not in origin
         ]
         if public_origins:
-            logger.error(
-                "DEV_MODE is enabled while CORS_ORIGINS points at non-local origins (%s). "
-                "Set DEV_MODE=false before publishing this instance (ngrok, tunnel, host).",
-                ", ".join(public_origins),
+            # Refuse to boot: with DEV_MODE on, any request without a signed
+            # initData is served as the dev account, so a public origin here
+            # means the instance is about to be exposed unauthenticated.
+            raise RuntimeError(
+                "DEV_MODE is enabled while CORS_ORIGINS points at non-local origins "
+                f"({', '.join(public_origins)}). Set DEV_MODE=false, or remove the "
+                "public origins for local development."
             )
     await init_db()
     logger.info("Database initialized")

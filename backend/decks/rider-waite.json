@@ -1,0 +1,511 @@
+{
+  "id": "rider-waite",
+  "name": "Райдер-Уэйт",
+  "image_base": "/decks/rider-waite",
+  "back_image": "/decks/rider-waite/PWR78_Card Back.webp",
+  "card_extension": ".jpg",
+  "cards": [
+    {
+      "id": "maj00",
+      "name": "Шут",
+      "arcana": "major"
+    },
+    {
+      "id": "maj01",
+      "name": "Маг",
+      "arcana": "major"
+    },
+    {
+      "id": "maj02",
+      "name": "Верховная Жрица",
+      "arcana": "major"
+    },
+    {
+      "id": "maj03",
+      "name": "Императрица",
+      "arcana": "major"
+    },
+    {
+      "id": "maj04",
+      "name": "Император",
+      "arcana": "major"
+    },
+    {
+      "id": "maj05",
+      "name": "Иерофант",
+      "arcana": "major"
+    },
+    {
+      "id": "maj06",
+      "name": "Влюблённые",
+      "arcana": "major"
+    },
+    {
+      "id": "maj07",
+      "name": "Колесница",
+      "arcana": "major"
+    },
+    {
+      "id": "maj08",
+      "name": "Сила",
+      "arcana": "major"
+    },
+    {
+      "id": "maj09",
+      "name": "Отшельник",
+      "arcana": "major"
+    },
+    {
+      "id": "maj10",
+      "name": "Колесо Фортуны",
+      "arcana": "major"
+    },
+    {
+      "id": "maj11",
+      "name": "Справедливость",
+      "arcana": "major"
+    },
+    {
+      "id": "maj12",
+      "name": "Повешенный",
+      "arcana": "major"
+    },
+    {
+      "id": "maj13",
+      "name": "Смерть",
+      "arcana": "major"
+    },
+    {
+      "id": "maj14",
+      "name": "Умеренность",
+      "arcana": "major"
+    },
+    {
+      "id": "maj15",
+      "name": "Дьявол",
+      "arcana": "major"
+    },
+    {
+      "id": "maj16",
+      "name": "Башня",
+      "arcana": "major"
+    },
+    {
+      "id": "maj17",
+      "name": "Звезда",
+      "arcana": "major"
+    },
+    {
+      "id": "maj18",
+      "name": "Луна",
+      "arcana": "major"
+    },
+    {
+      "id": "maj19",
+      "name": "Солнце",
+      "arcana": "major"
+    },
+    {
+      "id": "maj20",
+      "name": "Суд",
+      "arcana": "major"
+    },
+    {
+      "id": "maj21",
+      "name": "Мир",
+      "arcana": "major"
+    },
+    {
+      "id": "cups01",
+      "name": "Туз Кубки",
+      "arcana": "minor",
+      "suit": "cups",
+      "rank": "Туз"
+    },
+    {
+      "id": "cups02",
+      "name": "2 Кубки",
+      "arcana": "minor",
+      "suit": "cups",
+      "rank": "2"
+    },
+    {
+      "id": "cups03",
+      "name": "3 Кубки",
+      "arcana": "minor",
+      "suit": "cups",
+      "rank": "3"
+    },
+    {
+      "id": "cups04",
+      "name": "4 Кубки",
+      "arcana": "minor",
+      "suit": "cups",
+      "rank": "4"
+    },
+    {
+      "id": "cups05",
+      "name": "5 Кубки",
+      "arcana": "minor",
+      "suit": "cups",
+      "rank": "5"
+    },
+    {
+      "id": "cups06",
+      "name": "6 Кубки",
+      "arcana": "minor",
+      "suit": "cups",
+      "rank": "6"
+    },
+    {
+      "id": "cups07",
+      "name": "7 Кубки",
+      "arcana": "minor",
+      "suit": "cups",
+      "rank": "7"
+    },
+    {
+      "id": "cups08",
+      "name": "8 Кубки",
+      "arcana": "minor",
+      "suit": "cups",
+      "rank": "8"
+    },
+    {
+      "id": "cups09",
+      "name": "9 Кубки",
+      "arcana": "minor",
+      "suit": "cups",
+      "rank": "9"
+    },
+    {
+      "id": "cups10",
+      "name": "10 Кубки",
+      "arcana": "minor",
+      "suit": "cups",
+      "rank": "10"
+    },
+    {
+      "id": "cups11",
+      "name": "Паж Кубки",
+      "arcana": "minor",
+      "suit": "cups",
+      "rank": "Паж"
+    },
+    {
+      "id": "cups12",
+      "name": "Рыцарь Кубки",
+      "arcana": "minor",
+      "suit": "cups",
+      "rank": "Рыцарь"
+    },
+    {
+      "id": "cups13",
+      "name": "Королева Кубки",
+      "arcana": "minor",
+      "suit": "cups",
+      "rank": "Королева"
+    },
+    {
+      "id": "cups14",
+      "name": "Король Кубки",
+      "arcana": "minor",
+      "suit": "cups",
+      "rank": "Король"
+    },
+    {
+      "id": "pents01",
+      "name": "Туз Пентакли",
+      "arcana": "minor",
+      "suit": "pents",
+      "rank": "Туз"
+    },
+    {
+      "id": "pents02",
+      "name": "2 Пентакли",
+      "arcana": "minor",
+      "suit": "pents",
+      "rank": "2"
+    },
+    {
+      "id": "pents03",
+      "name": "3 Пентакли",
+      "arcana": "minor",
+      "suit": "pents",
+      "rank": "3"
+    },
+    {
+      "id": "pents04",
+      "name": "4 Пентакли",
+      "arcana": "minor",
+      "suit": "pents",
+      "rank": "4"
+    },
+    {
+      "id": "pents05",
+      "name": "5 Пентакли",
+      "arcana": "minor",
+      "suit": "pents",
+      "rank": "5"
+    },
+    {
+      "id": "pents06",
+      "name": "6 Пентакли",
+      "arcana": "minor",
+      "suit": "pents",
+      "rank": "6"
+    },
+    {
+      "id": "pents07",
+      "name": "7 Пентакли",
+      "arcana": "minor",
+      "suit": "pents",
+      "rank": "7"
+    },
+    {
+      "id": "pents08",
+      "name": "8 Пентакли",
+      "arcana": "minor",
+      "suit": "pents",
+      "rank": "8"
+    },
+    {
+      "id": "pents09",
+      "name": "9 Пентакли",
+      "arcana": "minor",
+      "suit": "pents",
+      "rank": "9"
+    },
+    {
+      "id": "pents10",
+      "name": "10 Пентакли",
+      "arcana": "minor",
+      "suit": "pents",
+      "rank": "10"
+    },
+    {
+      "id": "pents11",
+      "name": "Паж Пентакли",
+      "arcana": "minor",
+      "suit": "pents",
+      "rank": "Паж"
+    },
+    {
+      "id": "pents12",
+      "name": "Рыцарь Пентакли",
+      "arcana": "minor",
+      "suit": "pents",
+      "rank": "Рыцарь"
+    },
+    {
+      "id": "pents13",
+      "name": "Королева Пентакли",
+      "arcana": "minor",
+      "suit": "pents",
+      "rank": "Королева"
+    },
+    {
+      "id": "pents14",
+      "name": "Король Пентакли",
+      "arcana": "minor",
+      "suit": "pents",
+      "rank": "Король"
+    },
+    {
+      "id": "swords01",
+      "name": "Туз Мечи",
+      "arcana": "minor",
+      "suit": "swords",
+      "rank": "Туз"
+    },
+    {
+      "id": "swords02",
+      "name": "2 Мечи",
+      "arcana": "minor",
+      "suit": "swords",
+      "rank": "2"
+    },
+    {
+      "id": "swords03",
+      "name": "3 Мечи",
+      "arcana": "minor",
+      "suit": "swords",
+      "rank": "3"
+    },
+    {
+      "id": "swords04",
+      "name": "4 Мечи",
+      "arcana": "minor",
+      "suit": "swords",
+      "rank": "4"
+    },
+    {
+      "id": "swords05",
+      "name": "5 Мечи",
+      "arcana": "minor",
+      "suit": "swords",
+      "rank": "5"
+    },
+    {
+      "id": "swords06",
+      "name": "6 Мечи",
+      "arcana": "minor",
+      "suit": "swords",
+      "rank": "6"
+    },
+    {
+      "id": "swords07",
+      "name": "7 Мечи",
+      "arcana": "minor",
+      "suit": "swords",
+      "rank": "7"
+    },
+    {
+      "id": "swords08",
+      "name": "8 Мечи",
+      "arcana": "minor",
+      "suit": "swords",
+      "rank": "8"
+    },
+    {
+      "id": "swords09",
+      "name": "9 Мечи",
+      "arcana": "minor",
+      "suit": "swords",
+      "rank": "9"
+    },
+    {
+      "id": "swords10",
+      "name": "10 Мечи",
+      "arcana": "minor",
+      "suit": "swords",
+      "rank": "10"
+    },
+    {
+      "id": "swords11",
+      "name": "Паж Мечи",
+      "arcana": "minor",
+      "suit": "swords",
+      "rank": "Паж"
+    },
+    {
+      "id": "swords12",
+      "name": "Рыцарь Мечи",
+      "arcana": "minor",
+      "suit": "swords",
+      "rank": "Рыцарь"
+    },
+    {
+      "id": "swords13",
+      "name": "Королева Мечи",
+      "arcana": "minor",
+      "suit": "swords",
+      "rank": "Королева"
+    },
+    {
+      "id": "swords14",
+      "name": "Король Мечи",
+      "arcana": "minor",
+      "suit": "swords",
+      "rank": "Король"
+    },
+    {
+      "id": "wands01",
+      "name": "Туз Жезлы",
+      "arcana": "minor",
+      "suit": "wands",
+      "rank": "Туз"
+    },
+    {
+      "id": "wands02",
+      "name": "2 Жезлы",
+      "arcana": "minor",
+      "suit": "wands",
+      "rank": "2"
+    },
+    {
+      "id": "wands03",
+      "name": "3 Жезлы",
+      "arcana": "minor",
+      "suit": "wands",
+      "rank": "3"
+    },
+    {
+      "id": "wands04",
+      "name": "4 Жезлы",
+      "arcana": "minor",
+      "suit": "wands",
+      "rank": "4"
+    },
+    {
+      "id": "wands05",
+      "name": "5 Жезлы",
+      "arcana": "minor",
+      "suit": "wands",
+      "rank": "5"
+    },
+    {
+      "id": "wands06",
+      "name": "6 Жезлы",
+      "arcana": "minor",
+      "suit": "wands",
+      "rank": "6"
+    },
+    {
+      "id": "wands07",
+      "name": "7 Жезлы",
+      "arcana": "minor",
+      "suit": "wands",
+      "rank": "7"
+    },
+    {
+      "id": "wands08",
+      "name": "8 Жезлы",
+      "arcana": "minor",
+      "suit": "wands",
+      "rank": "8"
+    },
+    {
+      "id": "wands09",
+      "name": "9 Жезлы",
+      "arcana": "minor",
+      "suit": "wands",
+      "rank": "9"
+    },
+    {
+      "id": "wands10",
+      "name": "10 Жезлы",
+      "arcana": "minor",
+      "suit": "wands",
+      "rank": "10"
+    },
+    {
+      "id": "wands11",
+      "name": "Паж Жезлы",
+      "arcana": "minor",
+      "suit": "wands",
+      "rank": "Паж"
+    },
+    {
+      "id": "wands12",
+      "name": "Рыцарь Жезлы",
+      "arcana": "minor",
+      "suit": "wands",
+      "rank": "Рыцарь"
+    },
+    {
+      "id": "wands13",
+      "name": "Королева Жезлы",
+      "arcana": "minor",
+      "suit": "wands",
+      "rank": "Королева"
+    },
+    {
+      "id": "wands14",
+      "name": "Король Жезлы",
+      "arcana": "minor",
+      "suit": "wands",
+      "rank": "Король"
+    }
+  ]
+}

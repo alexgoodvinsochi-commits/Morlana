@@ -12,6 +12,53 @@ export class ApiError extends Error {
   }
 }
 
+/* Paired contract with `backend/schemas/tarot.py`: the reading endpoints speak
+   these shapes and nothing else. The client knows no card names and no image
+   paths — `name` and `image` always come from the server. */
+
+export interface DrawnCard {
+  deck_id: string;
+  card_id: string;
+  position: string;
+  reversed: boolean;
+  name: string;
+  image: string;
+}
+
+/* Paired contract with `ReadingState` in `backend/services/reading.py`. */
+export type ReadingStateValue =
+  | 'WAITING'
+  | 'QUESTION_ASKED'
+  | 'CARDS_DRAWN'
+  | 'INTERPRETATION'
+  | 'READY'
+  | 'COMPLETED';
+
+export interface ReadingCycleView {
+  cycle_number: number;
+  question: string;
+  cards: DrawnCard[];
+  answer: string;
+}
+
+/* The answer of /start, /ask, /draw, /next and /state. */
+export interface ReadingStateResponse {
+  session_id: string;
+  state: ReadingStateValue;
+  cycle_count: number;
+  max_cycles: number;
+  spread_id: string;
+  deck_id: string;
+  current_question: string | null;
+  current_cards: DrawnCard[];
+  cycles: ReadingCycleView[];
+}
+
+export interface ReadingActiveResponse {
+  session_id: string | null;
+  state: ReadingStateValue | null;
+}
+
 function buildUrl(path: string): string {
   const base = API_BASE ? API_BASE.replace(/\/$/, '') : window.location.origin;
   const sep = path.startsWith('/') ? '' : '/';

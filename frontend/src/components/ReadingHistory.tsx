@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react';
 import { apiGet } from '../api/client';
-import { getCardImage, getCardName } from '../utils/cardMap';
+import type { DrawnCard } from '../api/client';
 import '../styles/history.css';
 
 interface CycleHistory {
   cycle_number: number;
   question: string;
-  card_id: number;
-  card_name: string | null;
+  /* Имя и картинку карты даёт сервер: у клиента своей таблицы карт нет. */
+  cards: DrawnCard[];
 }
 
 interface ReadingHistoryItem {
@@ -99,14 +99,21 @@ export default function ReadingHistory({ initData, onBack }: Props) {
                   <div key={cycle.cycle_number} className="history-cycle">
                     <div className="history-cycle-header">
                       <span className="cycle-number">Цикл {cycle.cycle_number}</span>
-                      <img
-                        src={getCardImage(cycle.card_id)}
-                        alt={getCardName(cycle.card_id)}
-                        className="history-card-thumb"
-                      />
+                      {cycle.cards.map((card) => (
+                        <img
+                          key={`${card.position}-${card.card_id}`}
+                          src={card.image}
+                          alt={card.name}
+                          className="history-card-thumb"
+                        />
+                      ))}
                     </div>
                     <p className="history-question">{cycle.question}</p>
-                    <p className="history-card-name">{cycle.card_name || getCardName(cycle.card_id)}</p>
+                    {cycle.cards.length > 0 && (
+                      <p className="history-card-name">
+                        {cycle.cards.map((card) => card.name).join(', ')}
+                      </p>
+                    )}
                   </div>
                 ))}
 

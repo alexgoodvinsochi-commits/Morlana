@@ -3,80 +3,100 @@ import uuid
 import pytest
 
 from tests.helpers import (
+    DEFAULT_DECK_ID,
+    DEFAULT_SPREAD_ID,
     READING,
+    asked_question,
     db_execute,
     db_rows,
     db_scalar,
+    delete_reading_document,
     get_state,
     interpret,
+    reading_document,
+    reading_key,
     register,
     run_cycle,
     start_reading,
     synthesize,
+    system_prompt,
+    write_reading_document,
 )
 
 ALICE = 2001
 BOB = 2002
 
-WAITING = "ОЖИДАНИЕ"
-QUESTION_ASKED = "ВОПРОС ЗАДАН"
-CARD_DRAWN = "КАРТА ВЫТЯНУТА"
-INTERPRETATION = "ИНТЕРПРЕТАЦИЯ"
-READY = "ГОТОВО"
-COMPLETED = "ЗАВЕРШЕНО"
+WAITING = "WAITING"
+QUESTION_ASKED = "QUESTION_ASKED"
+CARDS_DRAWN = "CARDS_DRAWN"
+INTERPRETATION = "INTERPRETATION"
+READY = "READY"
+COMPLETED = "COMPLETED"
+
+DRAWN_CARD_FIELDS = {"deck_id", "card_id", "position", "reversed", "name", "image"}
 
 
-async def _redis_delete_state(session_id: str) -> None:
-    from services.redis import redis_service
-
-    await redis_service.client.delete(f"reading:{session_id}:state")
-
-
-async def _redis_delete_reading(session_id: str) -> int:
-    """Expire every Redis key of the reading; returns how many there were."""
-    from services.redis import redis_service
-
-    keys = await redis_service.client.keys(f"reading:{session_id}:*")
-    return await redis_service.client.delete(*keys) if keys else 0
+def assert_drawn_card(card: dict, *, deck_id: str = DEFAULT_DECK_ID, position: str = "main") -> None:
+    """Every card the API hands out is a full DrawnCard, ready to render."""
+    assert set(card) == DRAWN_CARD_FIELDS
+    assert card["deck_id"] == deck_id
+    assert card["position"] == position
+    assert card["reversed"] is False  # one-card does not allow reversed cards
+    assert card["name"]
+    assert card["image"] == f"/decks/{deck_id}/{card['card_id']}.jpg"
 
 
 # --- the happy path -----------------------------------------------------------
 
 async def test_full_cycle_reaches_ready_and_persists_the_cycle(client, llm):
+    from services.decks import legacy_number
+
     headers = await register(client, ALICE)
 
     started = await client.post(f"{READING}/start", json={}, headers=headers)
     assert started.status_code == 200
-    session_id = started.json()["session_id"]
-    assert started.json()["state"] == WAITING
+    reading = started.json()
+    session_id = reading["session_id"]
+    assert reading["state"] == WAITING
+    assert (reading["spread_id"], reading["deck_id"]) == (DEFAULT_SPREAD_ID, DEFAULT_DECK_ID)
+    assert (reading["current_question"], reading["current_cards"], reading["cycles"]) == (None, [], [])
 
     asked = await client.post(
         f"{READING}/ask", json={"session_id": session_id, "question": "Что меня ждёт?"}, headers=headers
     )
     assert asked.status_code == 200
-    assert asked.json() == {"session_id": session_id, "state": QUESTION_ASKED}
+    # One request per action: /ask answers with the whole reading, no /state needed.
+    assert asked.json()["session_id"] == session_id
+    assert asked.json()["state"] == QUESTION_ASKED
+    assert asked.json()["current_question"] == "Что меня ждёт?"
+    assert asked.json()["current_cards"] == []
 
     drawn = await client.post(f"{READING}/draw", json={"session_id": session_id}, headers=headers)
     assert drawn.status_code == 200
-    card = drawn.json()
-    assert card["state"] == CARD_DRAWN
-    assert 1 <= card["card_id"] <= 78
-    assert card["card_name"]
+    assert drawn.json()["state"] == CARDS_DRAWN
+    cards = drawn.json()["current_cards"]
+    assert len(cards) == 1
+    assert_drawn_card(cards[0])
 
     events = await interpret(client, headers, session_id)
     assert events == [{"text": chunk} for chunk in llm.chunks] + [{"cleaned": llm.full_text}, "[DONE]"]
     # The LLM got the drawn card and the question, not something else.
-    assert llm.calls[0]["cards"] == [card["card_id"]]
-    assert llm.calls[0]["question"] == "Что меня ждёт?"
-    assert llm.calls[0]["is_premium"] is False
+    call = llm.calls[0]
+    assert asked_question(call) == "Что меня ждёт?"
+    assert f"Главная карта: {cards[0]['name']}" in system_prompt(call)
+    assert call["is_premium"] is False
+    # The model parameters come from the spread, not from the route.
+    assert (call["spread"].id, call["spread"].max_tokens, call["spread"].temperature) == (
+        DEFAULT_SPREAD_ID, 2048, 0.7,
+    )
 
     state = await get_state(client, headers, session_id)
     assert state["state"] == READY
     assert state["cycle_count"] == 1
     assert state["max_cycles"] == 6
-    assert state["current_card"] == card["card_id"]
+    assert state["current_cards"] == cards
     assert state["cycles"] == [
-        {"cards": [card["card_id"]], "question": "Что меня ждёт?", "answer": llm.full_text}
+        {"cycle_number": 1, "question": "Что меня ждёт?", "cards": cards, "answer": llm.full_text}
     ]
 
     cycles = await db_rows("SELECT * FROM reading_cycles")
@@ -84,13 +104,25 @@ async def test_full_cycle_reaches_ready_and_persists_the_cycle(client, llm):
     assert cycles[0]["session_id"] == session_id
     assert cycles[0]["cycle_number"] == 1
     assert cycles[0]["question"] == "Что меня ждёт?"
-    assert cycles[0]["card_id"] == card["card_id"]
-    assert cycles[0]["card_name"] == card["card_name"]
+    assert cycles[0]["cards"] == cards
+    # The legacy single-card columns are still written, from the first card.
+    assert cycles[0]["card_id"] == legacy_number(cards[0]["card_id"])
+    assert cycles[0]["card_name"] == cards[0]["name"]
     assert cycles[0]["interpretation"] == llm.full_text
 
-    sessions = await db_rows("SELECT id, user_id, status, cycle_count, synthesis FROM tarot_sessions")
+    sessions = await db_rows(
+        "SELECT id, user_id, status, cycle_count, synthesis, spread_id, deck_id FROM tarot_sessions"
+    )
     assert sessions == [
-        {"id": session_id, "user_id": ALICE, "status": "active", "cycle_count": 1, "synthesis": None}
+        {
+            "id": session_id,
+            "user_id": ALICE,
+            "status": "active",
+            "cycle_count": 1,
+            "synthesis": None,
+            "spread_id": DEFAULT_SPREAD_ID,
+            "deck_id": DEFAULT_DECK_ID,
+        }
     ]
 
 
@@ -102,6 +134,10 @@ async def test_second_cycle_and_synthesis_archive_the_reading(client, llm):
     next_cycle = await client.post(f"{READING}/next", json={"session_id": session_id}, headers=headers)
     assert next_cycle.status_code == 200
     assert next_cycle.json()["state"] == WAITING
+    # The new cycle starts empty, and the finished one is kept.
+    assert next_cycle.json()["current_question"] is None
+    assert next_cycle.json()["current_cards"] == []
+    assert [cycle["cycle_number"] for cycle in next_cycle.json()["cycles"]] == [1]
     await run_cycle(client, headers, session_id, "Второй вопрос")
 
     events = await synthesize(client, headers, session_id)
@@ -115,9 +151,10 @@ async def test_second_cycle_and_synthesis_archive_the_reading(client, llm):
         {"cycle_number": 1, "question": "Первый вопрос"},
         {"cycle_number": 2, "question": "Второй вопрос"},
     ]
-    # The synthesis prompt was built from both cycles.
-    synthesis_prompt = llm.calls[-1]["custom_messages"][0]["content"]
+    # The synthesis prompt was built from both cycles, with the spread's wording.
+    synthesis_prompt = system_prompt(llm.calls[-1])
     assert "Первый вопрос" in synthesis_prompt and "Второй вопрос" in synthesis_prompt
+    assert llm.calls[-1]["spread"].synthesis_prompt in synthesis_prompt
 
     # A finished reading accepts no further cycles.
     after_end = await client.post(f"{READING}/next", json={"session_id": session_id}, headers=headers)
@@ -137,16 +174,132 @@ async def test_sixth_cycle_completes_the_reading_automatically(client):
             assert (await client.post(f"{READING}/next", json=body, headers=headers)).status_code == 200
 
     state = await get_state(client, headers, session_id)
+    # The limit is the spread's max_cycles, not a constant of the state machine.
     assert (state["state"], state["cycle_count"], len(state["cycles"])) == (COMPLETED, 6, 6)
+    assert state["max_cycles"] == 6
     seventh = await client.post(f"{READING}/next", json=body, headers=headers)
     assert seventh.status_code == 409
 
-    # /synthesis accepts a reading that is already ЗАВЕРШЕНО.
+    # /synthesis accepts a reading that is already COMPLETED.
     await synthesize(client, headers, session_id)
     session = (await db_rows("SELECT status, cycle_count FROM tarot_sessions"))[0]
     assert session == {"status": "archived", "cycle_count": 6}
     numbers = await db_rows("SELECT cycle_number FROM reading_cycles ORDER BY cycle_number")
     assert [row["cycle_number"] for row in numbers] == [1, 2, 3, 4, 5, 6]
+
+
+# --- the spread and the deck of a reading -------------------------------------
+
+async def test_start_accepts_the_default_spread_and_deck_explicitly(client):
+    headers = await register(client, ALICE)
+
+    resp = await client.post(
+        f"{READING}/start",
+        json={"spread_id": DEFAULT_SPREAD_ID, "deck_id": DEFAULT_DECK_ID},
+        headers=headers,
+    )
+
+    assert resp.status_code == 200
+    reading = resp.json()
+    assert (reading["spread_id"], reading["deck_id"]) == (DEFAULT_SPREAD_ID, DEFAULT_DECK_ID)
+    # The choice is remembered in both stores, so every later call uses it.
+    assert await db_rows("SELECT spread_id, deck_id FROM tarot_sessions") == [
+        {"spread_id": DEFAULT_SPREAD_ID, "deck_id": DEFAULT_DECK_ID}
+    ]
+    document = await reading_document(reading["session_id"])
+    assert (document["spread_id"], document["deck_id"]) == (DEFAULT_SPREAD_ID, DEFAULT_DECK_ID)
+
+
+@pytest.mark.parametrize(
+    "body, detail",
+    [
+        ({"spread_id": "celtic-cross"}, "Unknown spread"),
+        ({"deck_id": "thoth"}, "Unknown deck"),
+        ({"spread_id": "celtic-cross", "deck_id": "thoth"}, "Unknown spread"),
+    ],
+    ids=["unknown-spread", "unknown-deck", "both"],
+)
+async def test_start_with_an_unknown_spread_or_deck_is_400(client, body, detail):
+    headers = await register(client, ALICE)
+    running = await start_reading(client, headers)
+    await run_cycle(client, headers, running, "Вопрос")
+
+    resp = await client.post(f"{READING}/start", json=body, headers=headers)
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == detail
+    # Refused before any cleanup: the running reading is neither archived nor deleted.
+    assert await db_rows("SELECT id, status FROM tarot_sessions") == [{"id": running, "status": "active"}]
+    assert (await client.get(f"{READING}/active", headers=headers)).json()["session_id"] == running
+
+
+async def test_start_refuses_a_spread_the_deck_is_too_small_for(client, two_card_spread, tiny_deck):
+    """Both ids exist, but not together: a refusal here, not a 500 from /draw."""
+    headers = await register(client, ALICE)
+
+    resp = await client.post(
+        f"{READING}/start", json={"spread_id": "two-card", "deck_id": "tiny"}, headers=headers
+    )
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Spread needs more cards than the deck has"
+    assert await db_rows("SELECT id FROM tarot_sessions") == []
+
+
+async def test_a_two_card_spread_runs_end_to_end(client, llm, two_card_spread):
+    from services.decks import legacy_number
+
+    headers = await register(client, ALICE)
+    started = await client.post(f"{READING}/start", json={"spread_id": "two-card"}, headers=headers)
+    assert started.status_code == 200
+    reading = started.json()
+    session_id = reading["session_id"]
+    assert (reading["spread_id"], reading["max_cycles"]) == ("two-card", 2)
+    assert await db_scalar("SELECT spread_id FROM tarot_sessions") == "two-card"
+
+    await client.post(
+        f"{READING}/ask", json={"session_id": session_id, "question": "Как быть?"}, headers=headers
+    )
+    drawn = await client.post(f"{READING}/draw", json={"session_id": session_id}, headers=headers)
+    cards = drawn.json()["current_cards"]
+
+    # Two distinct cards, on the spread's positions, in the spread's order.
+    assert [card["position"] for card in cards] == ["situation", "advice"]
+    assert len({card["card_id"] for card in cards}) == 2
+    for card in cards:
+        assert set(card) == DRAWN_CARD_FIELDS
+        assert card["deck_id"] == DEFAULT_DECK_ID
+        assert isinstance(card["reversed"], bool)  # this spread allows reversed cards
+
+    events = await interpret(client, headers, session_id)
+    assert events[-2:] == [{"cleaned": llm.full_text}, "[DONE]"]
+    prompt = system_prompt(llm.calls[0])
+    for card, label in zip(cards, ["Ситуация", "Совет"]):
+        line = f"{label}: {card['name']}" + (" (перевёрнута)" if card["reversed"] else "")
+        assert line in prompt
+    assert two_card_spread.system_prompt in prompt
+    assert two_card_spread.aggregation_constraints[0] in prompt
+    # max_tokens and temperature of THIS spread reach the provider call.
+    assert (llm.calls[0]["spread"].max_tokens, llm.calls[0]["spread"].temperature) == (777, 0.25)
+
+    # Both cards are stored; the legacy columns keep the first one.
+    row = (await db_rows("SELECT cards, card_id, card_name FROM reading_cycles"))[0]
+    assert row["cards"] == cards
+    assert row["card_id"] == legacy_number(cards[0]["card_id"])
+    assert row["card_name"] == cards[0]["name"]
+
+    # max_cycles comes from the spread: the second cycle finishes the reading.
+    assert (await client.post(f"{READING}/next", json={"session_id": session_id}, headers=headers)).status_code == 200
+    await run_cycle(client, headers, session_id, "И что дальше?")
+    state = await get_state(client, headers, session_id)
+    assert (state["state"], state["cycle_count"]) == (COMPLETED, 2)
+    assert [len(cycle["cards"]) for cycle in state["cycles"]] == [2, 2]
+
+    await synthesize(client, headers, session_id)
+    history = (await client.get(f"{READING}/history", headers=headers)).json()["readings"]
+    assert [len(cycle["cards"]) for cycle in history[0]["cycles"]] == [2, 2]
+    # History reports the spread that was used, not the default one.
+    assert history[0]["spread_name"] == "two-card"
 
 
 # --- ownership ----------------------------------------------------------------
@@ -193,11 +346,119 @@ async def test_unknown_session_id_is_404(client, session_id):
 async def test_expired_redis_state_is_404(client):
     headers = await register(client, ALICE)
     session_id = await start_reading(client, headers)
-    await _redis_delete_state(session_id)
+    assert await delete_reading_document(session_id) == 1
 
     resp = await client.post(
         f"{READING}/ask", json={"session_id": session_id, "question": "Поздно?"}, headers=headers
     )
+
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Reading not found"
+
+
+# --- how the live reading is stored -------------------------------------------
+
+async def test_a_reading_is_one_redis_key_with_one_ttl(client):
+    from services.reading import SESSION_TTL
+    from services.redis import redis_service
+
+    headers = await register(client, ALICE)
+    session_id = await start_reading(client, headers)
+    key = reading_key(session_id)
+
+    assert await redis_service.client.keys("reading:*") == [key]
+    assert await reading_document(session_id) == {
+        "state": WAITING,
+        "cycle": 0,
+        "spread_id": DEFAULT_SPREAD_ID,
+        "deck_id": DEFAULT_DECK_ID,
+        "question": None,
+        "cards": [],
+        "cycle_data": [],
+    }
+    assert 0 < await redis_service.client.ttl(key) <= SESSION_TTL
+
+    # Every write refreshes the one TTL, so no part of a reading can expire alone.
+    await redis_service.client.expire(key, 60)
+    await run_cycle(client, headers, session_id, "Вопрос")
+
+    assert await redis_service.client.keys("reading:*") == [key]
+    assert await redis_service.client.ttl(key) > 60
+    document = await reading_document(session_id)
+    assert document["state"] == READY
+    assert document["cycle"] == 1
+    assert document["question"] == "Вопрос"
+    assert len(document["cards"]) == 1
+    assert [entry["cycle_number"] for entry in document["cycle_data"]] == [1]
+    assert set(document["cycle_data"][0]) == {"cycle_number", "question", "cards", "answer"}
+
+
+async def test_a_reading_left_by_the_previous_version_is_not_found(client):
+    """Five keys in the old format are not a reading any more: 404, not a 500."""
+    from services.redis import redis_service
+
+    headers = await register(client, ALICE)
+    session_id = await start_reading(client, headers)
+    await redis_service.client.delete(reading_key(session_id))
+    for suffix, value in (
+        ("state", "ОЖИДАНИЕ"),
+        ("cycle", "0"),
+        ("question", '"Вопрос"'),
+        ("card", "7"),
+        ("cycle_data", "[]"),
+    ):
+        await redis_service.client.set(f"reading:{session_id}:{suffix}", value)
+
+    state = await client.get(f"{READING}/state", params={"session_id": session_id}, headers=headers)
+
+    assert state.status_code == 404
+    assert state.json()["detail"] == "Reading not found"
+    # It cannot be resumed either: /active looks only for the new document.
+    assert (await client.get(f"{READING}/active", headers=headers)).json() == {
+        "session_id": None, "state": None
+    }
+
+
+async def test_a_reading_whose_spread_file_disappeared_falls_back_to_the_default(client, llm, caplog):
+    """A deploy that drops a spread or deck file must not strand a reading in flight."""
+    import logging
+
+    headers = await register(client, ALICE)
+    session_id = await start_reading(client, headers)
+    document = await reading_document(session_id)
+    document["spread_id"] = "retired-spread"
+    document["deck_id"] = "retired-deck"
+    await write_reading_document(session_id, document)
+
+    with caplog.at_level(logging.WARNING, logger="routes.reading"):
+        events = await run_cycle(client, headers, session_id, "Вопрос")
+
+    assert events[-2:] == [{"cleaned": llm.full_text}, "[DONE]"]
+    state = await get_state(client, headers, session_id)
+    assert (state["state"], state["cycle_count"], state["max_cycles"]) == (READY, 1, 6)
+    # The ids are reported as stored; only the behaviour falls back.
+    assert (state["spread_id"], state["deck_id"]) == ("retired-spread", "retired-deck")
+    assert_drawn_card(state["current_cards"][0])
+    assert llm.calls[0]["spread"].id == DEFAULT_SPREAD_ID
+    assert any("falling back" in record.getMessage() for record in caplog.records)
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        {"state": "ОЖИДАНИЕ", "cycle": 0},
+        {"state": "SOMETHING_ELSE", "cycle": 0},
+        {"cycle": 0},
+        [],
+    ],
+    ids=["russian-state", "unknown-state", "no-state", "not-an-object"],
+)
+async def test_a_document_this_version_cannot_read_is_not_found(client, document):
+    headers = await register(client, ALICE)
+    session_id = await start_reading(client, headers)
+    await write_reading_document(session_id, document)
+
+    resp = await client.get(f"{READING}/state", params={"session_id": session_id}, headers=headers)
 
     assert resp.status_code == 404
     assert resp.json()["detail"] == "Reading not found"
@@ -212,10 +473,10 @@ async def test_draw_in_wrong_state_is_409(client):
     resp = await client.post(f"{READING}/draw", json={"session_id": session_id}, headers=headers)
 
     assert resp.status_code == 409
-    assert resp.json()["detail"] == f"Invalid state transition: {WAITING} -> {CARD_DRAWN}"
+    assert resp.json()["detail"] == f"Invalid state transition: {WAITING} -> {CARDS_DRAWN}"
     state = await get_state(client, headers, session_id)
     assert state["state"] == WAITING
-    assert state["current_card"] is None
+    assert state["current_cards"] == []
 
 
 async def test_wrong_state_calls_never_answer_500(client):
@@ -223,7 +484,7 @@ async def test_wrong_state_calls_never_answer_500(client):
     session_id = await start_reading(client, headers)
     body = {"session_id": session_id}
 
-    # ОЖИДАНИЕ: only /ask is allowed.
+    # WAITING: only /ask is allowed.
     in_waiting = {
         "next": await client.post(f"{READING}/next", json=body, headers=headers),
         "synthesis": await client.post(f"{READING}/synthesis", json=body, headers=headers),
@@ -236,7 +497,7 @@ async def test_wrong_state_calls_never_answer_500(client):
     assert in_waiting["interpret"].status_code == 400
     assert in_waiting["interpret"].json()["detail"] == "No question set for this reading"
 
-    # ВОПРОС ЗАДАН: a second /ask is refused and does not replace the question.
+    # QUESTION_ASKED: a second /ask is refused and does not replace the question.
     first = await client.post(f"{READING}/ask", json={**body, "question": "Первый"}, headers=headers)
     second = await client.post(f"{READING}/ask", json={**body, "question": "Второй"}, headers=headers)
     assert first.status_code == 200
@@ -244,13 +505,13 @@ async def test_wrong_state_calls_never_answer_500(client):
     assert second.json()["detail"] == f"Invalid state transition: {QUESTION_ASKED} -> {QUESTION_ASKED}"
     no_card = await client.post(f"{READING}/interpret", json=body, headers=headers)
     assert no_card.status_code == 400
-    assert no_card.json()["detail"] == "No card drawn for this reading"
+    assert no_card.json()["detail"] == "No cards drawn for this reading"
     # A refused /next must not wipe the question either.
     assert (await client.post(f"{READING}/next", json=body, headers=headers)).status_code == 409
     state = await get_state(client, headers, session_id)
     assert (state["state"], state["current_question"]) == (QUESTION_ASKED, "Первый")
 
-    # ГОТОВО: the cycle is complete, /interpret and /draw are refused.
+    # READY: the cycle is complete, /interpret and /draw are refused.
     assert (await client.post(f"{READING}/draw", json=body, headers=headers)).status_code == 200
     await interpret(client, headers, session_id)
     again = await client.post(f"{READING}/interpret", json=body, headers=headers)
@@ -279,8 +540,8 @@ async def test_active_returns_the_unfinished_reading(client):
     # Another user does not see it.
     assert (await client.get(f"{READING}/active", headers=bob)).json() == {"session_id": None, "state": None}
 
-    # Once the Redis state is gone the reading cannot be resumed.
-    await _redis_delete_state(session_id)
+    # Once the Redis document is gone the reading cannot be resumed.
+    await delete_reading_document(session_id)
     assert (await client.get(f"{READING}/active", headers=alice)).json() == {"session_id": None, "state": None}
 
 
@@ -323,13 +584,13 @@ async def test_start_archives_a_reading_abandoned_long_ago_instead_of_deleting_i
     headers = await register(client, ALICE)
     abandoned = await start_reading(client, headers)
     await run_cycle(client, headers, abandoned, "Вчерашний вопрос")
-    # The user comes back the next day: the row is older than SESSION_TTL and every
-    # Redis key of the reading has expired. Only cycle_count > 0 tells it apart from
-    # the dead empty readings that /start deletes.
+    # The user comes back the next day: the row is older than SESSION_TTL and the
+    # reading's Redis document has expired. Only cycle_count > 0 tells it apart
+    # from the dead empty readings that /start deletes.
     await db_execute(
         "UPDATE tarot_sessions SET created_at = now() - interval '1 day' WHERE id = :id", id=abandoned
     )
-    assert await _redis_delete_reading(abandoned) == 5  # state, cycle, cycle_data, question, card
+    assert await delete_reading_document(abandoned) == 1  # one document per reading
 
     fresh = await start_reading(client, headers)
 
@@ -357,14 +618,14 @@ async def test_start_cleans_up_only_dead_empty_readings(client):
     dead_empty = await start_reading(client, headers)
     live_empty = await start_reading(client, headers)
     recent_empty = await start_reading(client, headers)
-    # Two readings are older than the session TTL; only one of them lost its Redis state.
+    # Two readings are older than the session TTL; only one of them lost its document.
     await db_execute(
         "UPDATE tarot_sessions SET created_at = now() - interval '2 hours' WHERE id IN (:a, :b)",
         a=dead_empty,
         b=live_empty,
     )
-    await _redis_delete_state(dead_empty)
-    await _redis_delete_state(recent_empty)
+    await delete_reading_document(dead_empty)
+    await delete_reading_document(recent_empty)
 
     fresh = await start_reading(client, headers)
 
@@ -402,12 +663,58 @@ async def test_history_is_not_deleted_and_free_user_sees_three(client):
     assert newest["synthesis"]
     assert [c["cycle_number"] for c in newest["cycles"]] == [1]
     assert newest["cycles"][0]["question"] == "Вопрос 5"
-    assert set(newest["cycles"][0]) == {"cycle_number", "question", "card_id", "card_name"}
+    assert set(newest["cycles"][0]) == {"cycle_number", "question", "cards"}
+    # The client gets ready-to-render cards, not a number it has to look up.
+    assert len(newest["cycles"][0]["cards"]) == 1
+    assert_drawn_card(newest["cycles"][0]["cards"][0])
 
     # All five are still in the database with their cycles.
     archived = await db_rows("SELECT id FROM tarot_sessions WHERE status = 'archived' ORDER BY created_at")
     assert [row["id"] for row in archived] == session_ids
     assert await db_scalar("SELECT count(*) FROM reading_cycles") == 5
+
+
+@pytest.mark.parametrize(
+    "card_name, expected_name",
+    [(None, "7 Мечи"), ("Старое имя", "Старое имя")],
+    ids=["from-the-deck", "from-the-old-column"],
+)
+async def test_history_rebuilds_the_cards_of_a_row_without_the_new_column(
+    client, card_name, expected_name
+):
+    """A row the stage-2 backfill could not fill still renders, from card_id/card_name."""
+    headers = await register(client, ALICE)
+    session_id = await start_reading(client, headers)
+    await run_cycle(client, headers, session_id, "Вопрос")
+    await synthesize(client, headers, session_id)
+    await db_execute(
+        "UPDATE reading_cycles SET cards = NULL, card_id = 57, card_name = :name", name=card_name
+    )
+
+    history = (await client.get(f"{READING}/history", headers=headers)).json()["readings"]
+
+    assert history[0]["cycles"][0]["cards"] == [
+        {
+            "deck_id": DEFAULT_DECK_ID,
+            "card_id": "swords07",
+            "position": "main",
+            "reversed": False,
+            "name": expected_name,
+            "image": "/decks/rider-waite/swords07.jpg",
+        }
+    ]
+
+
+async def test_history_of_a_row_with_no_card_at_all_is_an_empty_list(client):
+    headers = await register(client, ALICE)
+    session_id = await start_reading(client, headers)
+    await run_cycle(client, headers, session_id, "Вопрос")
+    await synthesize(client, headers, session_id)
+    await db_execute("UPDATE reading_cycles SET cards = NULL, card_id = NULL, card_name = NULL")
+
+    history = (await client.get(f"{READING}/history", headers=headers)).json()["readings"]
+
+    assert history[0]["cycles"][0]["cards"] == []
 
 
 async def test_history_limit_follows_the_subscription(client):
@@ -527,7 +834,7 @@ async def test_interpret_retry_after_a_failure_past_the_commit_finishes_the_save
     await client.post(f"{READING}/ask", json={**body, "question": "Вопрос"}, headers=headers)
     await client.post(f"{READING}/draw", json=body, headers=headers)
 
-    # The cycle row is committed, then Redis goes away before the state moves to ГОТОВО.
+    # The cycle row is committed, then Redis goes away before the state moves to READY.
     real_complete_cycle = reading_service.complete_cycle
     failures = []
 
@@ -571,13 +878,13 @@ async def test_interpret_retry_after_a_failure_past_the_commit_finishes_the_save
 
 
 async def test_cycle_is_saved_when_the_redis_counter_fell_behind_the_saved_rows(client):
-    from services.redis import redis_service
-
     headers = await register(client, ALICE)
     session_id = await start_reading(client, headers)
     await run_cycle(client, headers, session_id, "Первый вопрос")
     # The counter write of the first cycle was lost: cycle_number 1 would be reused.
-    await redis_service.client.set(f"reading:{session_id}:cycle", 0)
+    document = await reading_document(session_id)
+    document["cycle"] = 0
+    await write_reading_document(session_id, document)
     assert (await get_state(client, headers, session_id))["cycle_count"] == 0
 
     await client.post(f"{READING}/next", json={"session_id": session_id}, headers=headers)

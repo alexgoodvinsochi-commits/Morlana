@@ -48,6 +48,9 @@ os.environ.update(
     }
 )
 
+import json
+import shutil
+
 import httpx
 import psycopg
 import pytest
@@ -158,7 +161,12 @@ def rate_limits_on(rate_limits_off):
 
 
 class LLMStub:
-    """Stands in for services.llm.stream_prediction inside routes.reading."""
+    """Stands in for services.llm.stream_prediction inside routes.reading.
+
+    `calls` holds the keyword arguments of every call: `messages` (the prompt the
+    route built), `spread` (the Spread object, so max_tokens and temperature are
+    visible) and, for /interpret, `is_premium`.
+    """
 
     def __init__(self):
         self.chunks = ["Карта говорит: ", "всё будет ", "хорошо."]
@@ -187,6 +195,94 @@ def llm(monkeypatch) -> LLMStub:
     stub = LLMStub()
     monkeypatch.setattr(routes.reading, "stream_prediction", stub.stream)
     return stub
+
+
+# A spread that is not in the repository: proof that adding one is a file-only
+# change. Deliberately unlike one-card everywhere the code reads a spread field.
+TWO_CARD_SPREAD = {
+    "id": "two-card",
+    "version": 1,
+    "name": "Две карты",
+    "description": "Ситуация и совет",
+    "card_count": 2,
+    "positions": [
+        {
+            "key": "situation",
+            "label": "Ситуация",
+            "prompt_addition": "Эта карта показывает, что происходит сейчас.",
+        },
+        {
+            "key": "advice",
+            "label": "Совет",
+            "prompt_addition": "Эта карта показывает, что с этим делать.",
+        },
+    ],
+    "system_prompt": "Ответь по двум картам, коротко.",
+    "synthesis_prompt": "Сведи расклады по две карты в один вывод.",
+    "aggregation_constraints": ["Свяжи карты между собой, не описывай их по отдельности."],
+    "max_cycles": 2,
+    "allow_reversed": True,
+    "requires_question": True,
+    "max_tokens": 777,
+    "temperature": 0.25,
+    "tier": "free",
+}
+
+
+@pytest.fixture
+def two_card_spread(tmp_path, monkeypatch):
+    """Install a second spread that lives only in a tmp dir for this one test.
+
+    The registry is rebuilt from that dir and put where the routes look it up,
+    so nothing but a JSON file is needed to add a spread.
+    """
+    import routes.reading
+    import services.spreads
+
+    spreads_dir = tmp_path / "spreads"
+    spreads_dir.mkdir()
+    shutil.copy(services.spreads.SPREADS_DIR / "one-card.json", spreads_dir / "one-card.json")
+    (spreads_dir / "two-card.json").write_text(
+        json.dumps(TWO_CARD_SPREAD, ensure_ascii=False), encoding="utf-8"
+    )
+
+    monkeypatch.setattr(services.spreads, "SPREADS_DIR", spreads_dir)
+    registry = services.spreads.SpreadRegistry(services.spreads._load_spreads())
+    monkeypatch.setattr(services.spreads, "spread_registry", registry)
+    monkeypatch.setattr(routes.reading, "spread_registry", registry)
+    return registry.get("two-card")
+
+
+# A deck that is not in the repository either, and deliberately tiny: any spread
+# of more than one card asks it for more cards than it holds.
+TINY_DECK = {
+    "id": "tiny",
+    "name": "Одна карта",
+    "image_base": "/decks/tiny",
+    "back_image": "/decks/tiny/back.webp",
+    "card_extension": ".jpg",
+    "cards": [{"id": "maj00", "name": "Шут", "arcana": "major"}],
+}
+
+
+@pytest.fixture
+def tiny_deck(tmp_path, monkeypatch):
+    """Install a second deck that lives only in a tmp dir for this one test."""
+    import routes.reading
+    import services.decks
+
+    decks_dir = tmp_path / "decks"
+    decks_dir.mkdir()
+    shutil.copy(services.decks.DECKS_DIR / "rider-waite.json", decks_dir / "rider-waite.json")
+    (decks_dir / "tiny.json").write_text(
+        json.dumps(TINY_DECK, ensure_ascii=False), encoding="utf-8"
+    )
+
+    monkeypatch.setattr(services.decks, "DECKS_DIR", decks_dir)
+    registry = services.decks.DeckRegistry(services.decks._load_decks())
+    monkeypatch.setattr(services.decks, "deck_registry", registry)
+    monkeypatch.setattr(routes.reading, "deck_registry", registry)
+    return registry.get("tiny")
 
 
 @pytest_asyncio.fixture

@@ -16,8 +16,13 @@ TEST_BOT_TOKEN = "123456:TEST"
 
 AUTH = "/api/v1/auth"
 READING = "/api/v1/tarot/reading"
+CATALOG = "/api/v1/tarot"
 
 DEFAULT_PASSWORD = "correct-horse-42"
+
+# What a reading is started with when /start names neither.
+DEFAULT_SPREAD_ID = "one-card"
+DEFAULT_DECK_ID = "rider-waite"
 
 
 def sign_init_data(
@@ -111,8 +116,9 @@ def parse_sse(body: str) -> list:
     return events
 
 
-async def start_reading(client, headers) -> str:
-    resp = await client.post(f"{READING}/start", json={}, headers=headers)
+async def start_reading(client, headers, **body) -> str:
+    """POST /start; `spread_id=` and `deck_id=` go into the body when given."""
+    resp = await client.post(f"{READING}/start", json=body, headers=headers)
     assert resp.status_code == 200, resp.text
     return resp.json()["session_id"]
 
@@ -145,3 +151,44 @@ async def synthesize(client, headers, session_id: str) -> list:
     resp = await client.post(f"{READING}/synthesis", json={"session_id": session_id}, headers=headers)
     assert resp.status_code == 200, resp.text
     return parse_sse(resp.text)
+
+
+# --- what the LLM stub recorded ----------------------------------------------
+
+def system_prompt(call: dict) -> str:
+    """The system message of one recorded stream_prediction call."""
+    return call["messages"][0]["content"]
+
+
+def asked_question(call: dict) -> str:
+    """The user message of one recorded /interpret call: the cycle's question."""
+    return call["messages"][1]["content"]
+
+
+# --- the live reading in Redis ------------------------------------------------
+
+def reading_key(session_id: str) -> str:
+    return f"reading:{session_id}"
+
+
+async def reading_document(session_id: str) -> dict | None:
+    """The one Redis document of a reading, decoded."""
+    from services.redis import redis_service
+
+    return await redis_service.get(reading_key(session_id))
+
+
+async def write_reading_document(session_id: str, document: dict) -> None:
+    """Put a document back, TTL and all: used to fake a lost or corrupted write."""
+    from services.reading import SESSION_TTL
+    from services.redis import redis_service
+
+    await redis_service.set(reading_key(session_id), document, ttl=SESSION_TTL)
+
+
+async def delete_reading_document(session_id: str) -> int:
+    """Expire the reading; returns how many Redis keys it had."""
+    from services.redis import redis_service
+
+    keys = await redis_service.client.keys(f"reading:{session_id}*")
+    return await redis_service.client.delete(*keys) if keys else 0

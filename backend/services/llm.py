@@ -1,4 +1,3 @@
-import json
 import re
 from pathlib import Path
 from typing import AsyncGenerator
@@ -6,6 +5,7 @@ from typing import AsyncGenerator
 from openai import AsyncOpenAI
 
 from config import settings
+from services.spreads import Spread
 
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
@@ -17,29 +17,7 @@ def _load_file(filename: str) -> str:
     raise FileNotFoundError(f"File not found: {path}")
 
 
-def _load_spread(name: str) -> dict:
-    config_path = PROMPTS_DIR / "spreads" / f"{name}.json"
-    if not config_path.exists():
-        raise FileNotFoundError(f"Spread config not found: {config_path}")
-    config = json.loads(config_path.read_text(encoding="utf-8"))
-    config["prompt_text"] = config.get("system_prompt", "")
-    return config
-
-
 PERSONA = _load_file("persona.md")
-SPREADS = {
-    "one-card": _load_spread("one-card"),
-}
-DEFAULT_SPREAD = "one-card"
-
-SYNTHESIS_PROMPT = """Синтезируй несколько раскладов в один вывод.
-
-Формат:
-1. Что повторяется во всех вопросах (1-2 предложения)
-2. В какую сторону всё движется (1-2 предложения)
-3. Что конкретно делать (2-3 действия)
-
-Максимум 400 слов. Без повторения отдельных раскладов."""
 
 
 def build_client() -> AsyncOpenAI | None:
@@ -56,38 +34,17 @@ def build_client() -> AsyncOpenAI | None:
 
 client = build_client()
 
-MAJOR_ARCANA = [
-    "Шут", "Маг", "Верховная Жрица", "Императрица", "Император",
-    "Иерофант", "Влюблённые", "Колесница", "Сила", "Отшельник",
-    "Колесо Фортуны", "Справедливость", "Повешенный", "Смерть",
-    "Умеренность", "Дьявол", "Башня", "Звезда", "Луна", "Солнце",
-    "Суд", "Мир",
-]
-
-MINOR_RANKS = ["Туз", "2", "3", "4", "5", "6", "7", "8", "9", "10", "Паж", "Рыцарь", "Королева", "Король"]
-
-SUITS = ["Кубки", "Пентакли", "Мечи", "Жезлы"]
-
-
-def get_card_name(card_id: int) -> str:
-    if 1 <= card_id <= 22:
-        return MAJOR_ARCANA[card_id - 1]
-    minor_index = card_id - 23
-    suit_index = minor_index // 14
-    rank_index = minor_index % 14
-    return f"{MINOR_RANKS[rank_index]} {SUITS[suit_index]}"
-
 
 # Typographic characters the whitelist below would drop, gluing words together
-# ("что\u2011то" -> "чтото", "3\u202fдня" -> "3дня"): mapped to their plain equivalents first.
+# ("что‑то" -> "чтото", "3 дня" -> "3дня"): mapped to their plain equivalents first.
 _TYPOGRAPHIC = str.maketrans({
-    "\u2010": "-",  # hyphen
-    "\u2011": "-",  # non-breaking hyphen
-    "\u2007": " ",  # figure space
-    "\u2009": " ",  # thin space
-    "\u200a": " ",  # hair space
-    "\u202f": " ",  # narrow no-break space
-    "\u2026": "...",  # ellipsis
+    "‐": "-",  # hyphen
+    "‑": "-",  # non-breaking hyphen
+    " ": " ",  # figure space
+    " ": " ",  # thin space
+    " ": " ",  # hair space
+    " ": " ",  # narrow no-break space
+    "…": "...",  # ellipsis
 })
 
 
@@ -96,72 +53,68 @@ def clean_llm_output(text: str) -> str:
     text = re.sub(r'[*_`]', '', text)
     text = re.sub(r'#{1,6}\s*', '', text)
     text = text.translate(_TYPOGRAPHIC)
-    text = re.sub(r'[^\u0400-\u04FF\u0000-\u007F\u00A0 \t\n\r.,!?;:\-\u2012\u2013\u2014()\"\'«»/]', '', text)
-    text = re.sub(r'([a-zA-Z])([\u0400-\u04FF])', r'\1 \2', text)
-    text = re.sub(r'([\u0400-\u04FF])([a-zA-Z])', r'\1 \2', text)
+    text = re.sub(r'[^Ѐ-ӿ\u0000-\u007F  \t\n\r.,!?;:\-‒–—()\"\'«»/]', '', text)
+    text = re.sub(r'([a-zA-Z])([Ѐ-ӿ])', r'\1 \2', text)
+    text = re.sub(r'([Ѐ-ӿ])([a-zA-Z])', r'\1 \2', text)
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()
 
 
+def _card_label(spread: Spread, card: dict) -> str:
+    """One drawn card for the prompt: '<position label>: <card name>[ (перевёрнута)]'."""
+    name = card.get("name") or card.get("card_id", "")
+    line = f"{spread.label_for(card.get('position', ''))}: {name}"
+    return f"{line} (перевёрнута)" if card.get("reversed") else line
+
+
 def build_reading_prompt(
-    cards: list[int],
+    spread: Spread,
+    cards: list[dict],
     question: str,
     user_name: str,
-    history: list[dict] | None = None,
-    spread_name: str = DEFAULT_SPREAD,
 ) -> list[dict]:
-    spread = SPREADS[spread_name]
-    card_names = [get_card_name(c) for c in cards]
-    card_list = ", ".join(card_names)
-
-    position_hints = []
-    for rule in spread.get("position_rules", []):
-        position_hints.append(f"- {rule['label']}: {rule['prompt_addition']}")
-    position_text = "\n".join(position_hints) if position_hints else ""
-
-    constraints = spread.get("aggregation_rules", {}).get("additional_constraints", [])
-    constraints_text = "\n".join(f"- {c}" for c in constraints) if constraints else ""
+    """System message for one cycle. `cards` are DrawnCard-shaped dicts."""
+    position_text = "\n".join(
+        f"- {position.label}: {position.prompt_addition}" for position in spread.positions
+    )
+    constraints_text = "\n".join(f"- {c}" for c in spread.aggregation_constraints)
+    card_list = "\n".join(_card_label(spread, card) for card in cards)
 
     system_msg = f"""{PERSONA}
 
 ---
 
-{spread['prompt_text']}
+{spread.system_prompt}
 
 {position_text}
 
 {constraints_text}
 
 Клиент: {user_name}
-Карты: {card_list}"""
+Карты:
+{card_list}"""
 
-    messages = [{"role": "system", "content": system_msg}]
-
-    if history:
-        messages.extend(history[-4:])
-
-    messages.append({"role": "user", "content": question})
-    return messages
-
-
-def get_spread_config(spread_name: str = DEFAULT_SPREAD) -> dict:
-    return SPREADS[spread_name]
+    return [
+        {"role": "system", "content": system_msg},
+        {"role": "user", "content": question},
+    ]
 
 
 def build_synthesis_prompt(
+    spread: Spread,
     cycles: list[dict],
     user_name: str,
 ) -> list[dict]:
+    """System message for the synthesis. `cycles` are the collected cycle_data entries."""
     cycles_text = []
     for i, cycle in enumerate(cycles, 1):
-        cards = cycle.get("cards", [])
-        card_names = [get_card_name(c) for c in cards]
+        card_names = ", ".join(_card_label(spread, card) for card in cycle.get("cards", []))
         question = cycle.get("question", "Общий вопрос")
         answer = cycle.get("answer", "")
         cycles_text.append(
             f"Расклад {i}:\n"
             f"Вопрос: {question}\n"
-            f"Карты: {', '.join(card_names)}\n"
+            f"Карты: {card_names}\n"
             f"Ответ: {answer}"
         )
 
@@ -171,7 +124,7 @@ def build_synthesis_prompt(
 
 ---
 
-{SYNTHESIS_PROMPT}
+{spread.synthesis_prompt}
 
 Клиент: {user_name}
 
@@ -182,29 +135,23 @@ def build_synthesis_prompt(
 
 
 async def stream_prediction(
-    cards: list[int],
-    question: str,
-    user_name: str,
-    history: list[dict] | None = None,
+    messages: list[dict],
+    spread: Spread,
     is_premium: bool = False,
-    custom_messages: list[dict] | None = None,
-    spread_name: str = DEFAULT_SPREAD,
 ) -> AsyncGenerator[str, None]:
+    """Stream the provider's answer. The spread sets max_tokens and temperature."""
     if not client:
         yield "[Модуль ИИ не настроен. Установите LLM_API_KEY в .env]"
         return
 
-    spread = SPREADS[spread_name]
     model = settings.LLM_PREMIUM_MODEL if is_premium else settings.LLM_FREE_MODEL
-    messages = custom_messages if custom_messages else build_reading_prompt(
-        cards, question, user_name, history, spread_name
-    )
 
     stream = await client.chat.completions.create(
         model=model,
         messages=messages,
         stream=True,
-        max_tokens=spread.get("max_tokens", 2048),
+        max_tokens=spread.max_tokens,
+        temperature=spread.temperature,
     )
 
     async for chunk in stream:

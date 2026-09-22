@@ -1,5 +1,7 @@
 import logging
+from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any
 
 from services.redis import redis_service
 
@@ -7,24 +9,23 @@ logger = logging.getLogger(__name__)
 
 
 class ReadingState(str, Enum):
-    WAITING = "ОЖИДАНИЕ"
-    QUESTION_ASKED = "ВОПРОС ЗАДАН"
-    CARD_DRAWN = "КАРТА ВЫТЯНУТА"
-    INTERPRETATION = "ИНТЕРПРЕТАЦИЯ"
-    READY = "ГОТОВО"
-    COMPLETED = "ЗАВЕРШЕНО"
+    WAITING = "WAITING"
+    QUESTION_ASKED = "QUESTION_ASKED"
+    CARDS_DRAWN = "CARDS_DRAWN"
+    INTERPRETATION = "INTERPRETATION"
+    READY = "READY"
+    COMPLETED = "COMPLETED"
 
 
 VALID_TRANSITIONS: dict[ReadingState, set[ReadingState]] = {
     ReadingState.WAITING: {ReadingState.QUESTION_ASKED},
-    ReadingState.QUESTION_ASKED: {ReadingState.CARD_DRAWN},
-    ReadingState.CARD_DRAWN: {ReadingState.INTERPRETATION},
+    ReadingState.QUESTION_ASKED: {ReadingState.CARDS_DRAWN},
+    ReadingState.CARDS_DRAWN: {ReadingState.INTERPRETATION},
     ReadingState.INTERPRETATION: {ReadingState.READY},
     ReadingState.READY: {ReadingState.WAITING, ReadingState.COMPLETED},
     ReadingState.COMPLETED: set(),
 }
 
-MAX_CYCLES = 6
 SESSION_TTL = 3600  # 1 hour
 
 
@@ -45,112 +46,188 @@ class InvalidTransition(ValueError):
         super().__init__(f"Cannot transition from {current.value} to {target.value}")
 
 
-class ReadingService:
-    """Manages the reading state machine for tarot sessions.
+@dataclass
+class ReadingSession:
+    """Everything a live reading holds. Stored as one JSON document in Redis.
 
-    States: ОЖИДАНИЕ → ВОПРОС ЗАДАН → КАРТА ВЫТЯНУТА → ИНТЕРПРЕТАЦИЯ → ГОТОВО → ЗАВЕРШЕНО
-    Maximum 6 cycles per session, after which automatic synthesis (ЗАВЕРШЕНО) occurs.
+    `cards` are the cards of the current cycle (DrawnCard dicts, one per position
+    of the spread); `cycle_data` is one entry per finished cycle, shaped like the
+    API's ReadingCycleView: {cycle_number, question, cards, answer}.
+    """
+
+    session_id: str
+    state: ReadingState
+    spread_id: str
+    deck_id: str
+    cycle: int = 0
+    question: str | None = None
+    cards: list[dict] = field(default_factory=list)
+    cycle_data: list[dict] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "state": self.state.value,
+            "cycle": self.cycle,
+            "spread_id": self.spread_id,
+            "deck_id": self.deck_id,
+            "question": self.question,
+            "cards": self.cards,
+            "cycle_data": self.cycle_data,
+        }
+
+    @classmethod
+    def from_dict(cls, session_id: str, raw: Any) -> "ReadingSession | None":
+        """The document, or None for anything this version cannot read.
+
+        Readings written by the previous version lived in five keys, none of them
+        under this name, so they simply look expired and answer 404.
+        """
+        if not isinstance(raw, dict):
+            return None
+        try:
+            state = ReadingState(raw["state"])
+        except (KeyError, TypeError, ValueError):
+            logger.error("Unreadable reading document for session %s", session_id)
+            return None
+        return cls(
+            session_id=session_id,
+            state=state,
+            spread_id=raw.get("spread_id") or "",
+            deck_id=raw.get("deck_id") or "",
+            cycle=int(raw.get("cycle") or 0),
+            question=raw.get("question"),
+            cards=list(raw.get("cards") or []),
+            cycle_data=list(raw.get("cycle_data") or []),
+        )
+
+
+class ReadingService:
+    """The reading state machine, over one Redis key per reading.
+
+    States: WAITING -> QUESTION_ASKED -> CARDS_DRAWN -> INTERPRETATION -> READY,
+    then either the next cycle (WAITING) or COMPLETED. The cycle limit belongs to
+    the spread, so callers pass `max_cycles` in instead of the service knowing it.
     """
 
     _KEY_PREFIX = "reading:"
 
     @staticmethod
-    def _state_key(session_id: str) -> str:
-        return f"{ReadingService._KEY_PREFIX}{session_id}:state"
+    def key(session_id: str) -> str:
+        return f"{ReadingService._KEY_PREFIX}{session_id}"
 
-    @staticmethod
-    def _cycle_key(session_id: str) -> str:
-        return f"{ReadingService._KEY_PREFIX}{session_id}:cycle"
+    async def _save(self, session: ReadingSession) -> None:
+        # One key, one TTL: every write moves the whole reading forward an hour,
+        # so no part of it can expire from under a live state.
+        await redis_service.set(self.key(session.session_id), session.to_dict(), ttl=SESSION_TTL)
 
-    @staticmethod
-    def _question_key(session_id: str) -> str:
-        return f"{ReadingService._KEY_PREFIX}{session_id}:question"
-
-    @staticmethod
-    def _card_key(session_id: str) -> str:
-        return f"{ReadingService._KEY_PREFIX}{session_id}:card"
-
-    async def start(self, session_id: str) -> ReadingState:
-        await redis_service.set(self._state_key(session_id), ReadingState.WAITING.value, ttl=SESSION_TTL)
-        await redis_service.set(self._cycle_key(session_id), 0, ttl=SESSION_TTL)
-        return ReadingState.WAITING
+    async def get(self, session_id: str) -> ReadingSession | None:
+        raw = await redis_service.get(self.key(session_id))
+        if raw is None:
+            return None
+        return ReadingSession.from_dict(session_id, raw)
 
     async def get_state(self, session_id: str) -> ReadingState | None:
-        state_val = await redis_service.get(self._state_key(session_id))
-        if state_val is None:
-            return None
-        try:
-            return ReadingState(state_val)
-        except ValueError:
-            logger.error(f"Invalid state value '{state_val}' for session {session_id}")
-            return None
+        session = await self.get(session_id)
+        return session.state if session is not None else None
 
-    async def get_cycle(self, session_id: str) -> int:
-        cycle = await redis_service.get(self._cycle_key(session_id))
-        return int(cycle) if cycle is not None else 0
+    async def _require(self, session_id: str) -> ReadingSession:
+        session = await self.get(session_id)
+        if session is None:
+            raise ReadingNotFound(session_id)
+        return session
 
-    def _validate_transition(self, current: ReadingState, target: ReadingState) -> bool:
-        allowed = VALID_TRANSITIONS.get(current, set())
+    def _require_transition(self, session: ReadingSession, target: ReadingState) -> None:
+        """Raise InvalidTransition unless `target` is reachable from the current state."""
+        allowed = VALID_TRANSITIONS.get(session.state, set())
         if target not in allowed:
             logger.warning(
-                f"Invalid transition: {current.value} -> {target.value}. "
-                f"Allowed: {[s.value for s in allowed]}"
+                "Invalid transition: %s -> %s. Allowed: %s",
+                session.state.value,
+                target.value,
+                [s.value for s in allowed],
             )
-            return False
-        return True
+            raise InvalidTransition(session.state, target)
 
-    async def _check_transition(self, session_id: str, target: ReadingState) -> None:
-        """Raise ReadingNotFound / InvalidTransition unless `target` is reachable now."""
-        current = await self.get_state(session_id)
-        if current is None:
-            raise ReadingNotFound(session_id)
-        if not self._validate_transition(current, target):
-            raise InvalidTransition(current, target)
+    async def start(self, session_id: str, spread_id: str, deck_id: str) -> ReadingSession:
+        session = ReadingSession(
+            session_id=session_id,
+            state=ReadingState.WAITING,
+            spread_id=spread_id,
+            deck_id=deck_id,
+        )
+        await self._save(session)
+        return session
 
-    async def _transition(self, session_id: str, target: ReadingState) -> ReadingState:
-        await self._check_transition(session_id, target)
-        await redis_service.set(self._state_key(session_id), target.value, ttl=SESSION_TTL)
-        return target
+    async def ask(self, session_id: str, question: str) -> ReadingSession:
+        """WAITING -> QUESTION_ASKED, keeping the question."""
+        session = await self._require(session_id)
+        self._require_transition(session, ReadingState.QUESTION_ASKED)
+        session.state = ReadingState.QUESTION_ASKED
+        session.question = question
+        await self._save(session)
+        return session
 
-    async def ask(self, session_id: str) -> ReadingState:
-        """ОЖИДАНИЕ -> ВОПРОС ЗАДАН"""
-        return await self._transition(session_id, ReadingState.QUESTION_ASKED)
+    async def draw(self, session_id: str, cards: list[dict]) -> ReadingSession:
+        """QUESTION_ASKED -> CARDS_DRAWN, keeping the cards the server drew."""
+        session = await self._require(session_id)
+        self._require_transition(session, ReadingState.CARDS_DRAWN)
+        session.state = ReadingState.CARDS_DRAWN
+        session.cards = cards
+        await self._save(session)
+        return session
 
-    async def draw(self, session_id: str) -> ReadingState:
-        """ВОПРОС ЗАДАН -> КАРТА ВЫТЯНУТА"""
-        return await self._transition(session_id, ReadingState.CARD_DRAWN)
+    async def mark_interpreting(self, session_id: str) -> ReadingSession:
+        """CARDS_DRAWN -> INTERPRETATION"""
+        session = await self._require(session_id)
+        self._require_transition(session, ReadingState.INTERPRETATION)
+        session.state = ReadingState.INTERPRETATION
+        await self._save(session)
+        return session
 
-    async def mark_interpreting(self, session_id: str) -> ReadingState:
-        """КАРТА ВЫТЯНУТА -> ИНТЕРПРЕТАЦИЯ"""
-        return await self._transition(session_id, ReadingState.INTERPRETATION)
+    async def complete_cycle(
+        self,
+        session_id: str,
+        cycle: int,
+        max_cycles: int,
+        cycle_entry: dict | None = None,
+    ) -> ReadingSession:
+        """INTERPRETATION -> READY, or straight to COMPLETED on the last cycle.
 
-    async def complete_cycle(self, session_id: str, cycle: int | None = None) -> ReadingState:
-        """ИНТЕРПРЕТАЦИЯ -> ГОТОВО. Advances the cycle counter. Auto-completes after MAX_CYCLES.
-
-        `cycle` is the number of the cycle that was just saved; without it the
-        counter is incremented. Passing it keeps a repeated call idempotent.
+        `cycle` is the number of the cycle that was just committed to Postgres, so
+        a repeated call is idempotent. `cycle_entry` joins `cycle_data` unless that
+        cycle is already there (a retry that resumed an already committed row).
+        This is a single write: the cycle is in Postgres before the state moves.
         """
-        new_state = await self._transition(session_id, ReadingState.READY)
-        if cycle is None:
-            cycle = await self.get_cycle(session_id) + 1
-        await redis_service.set(self._cycle_key(session_id), cycle, ttl=SESSION_TTL)
-        if cycle >= MAX_CYCLES:
-            logger.info(f"Session {session_id} reached {MAX_CYCLES} cycles, auto-completing")
-            await self._transition(session_id, ReadingState.COMPLETED)
-            return ReadingState.COMPLETED
-        return new_state
+        session = await self._require(session_id)
+        self._require_transition(session, ReadingState.READY)
+        if cycle_entry is not None and len(session.cycle_data) < cycle:
+            session.cycle_data.append(cycle_entry)
+        session.cycle = cycle
+        session.state = ReadingState.READY
+        if max_cycles and cycle >= max_cycles:
+            logger.info("Session %s reached %d cycles, auto-completing", session_id, max_cycles)
+            session.state = ReadingState.COMPLETED
+        await self._save(session)
+        return session
 
-    async def end(self, session_id: str) -> ReadingState:
-        """ГОТОВО -> ЗАВЕРШЕНО"""
-        return await self._transition(session_id, ReadingState.COMPLETED)
+    async def end(self, session_id: str) -> ReadingSession:
+        """READY -> COMPLETED"""
+        session = await self._require(session_id)
+        self._require_transition(session, ReadingState.COMPLETED)
+        session.state = ReadingState.COMPLETED
+        await self._save(session)
+        return session
 
-    async def start_new_cycle(self, session_id: str) -> ReadingState:
-        """ГОТОВО -> ОЖИДАНИЕ (начало нового цикла)"""
-        # Validate first: a wrong-state call must not wipe the current question and card.
-        await self._check_transition(session_id, ReadingState.WAITING)
-        await redis_service.delete(self._question_key(session_id))
-        await redis_service.delete(self._card_key(session_id))
-        return await self._transition(session_id, ReadingState.WAITING)
+    async def start_new_cycle(self, session_id: str) -> ReadingSession:
+        """READY -> WAITING (the next cycle of the same reading)."""
+        session = await self._require(session_id)
+        # Validate first: a wrong-state call must not wipe the question and cards.
+        self._require_transition(session, ReadingState.WAITING)
+        session.state = ReadingState.WAITING
+        session.question = None
+        session.cards = []
+        await self._save(session)
+        return session
 
 
 reading_service = ReadingService()

@@ -3,12 +3,23 @@ import logging
 
 import pytest
 
-from tests.helpers import READING, db_rows, get_state, interpret, register, run_cycle, start_reading, synthesize
+from tests.helpers import (
+    READING,
+    asked_question,
+    db_rows,
+    get_state,
+    interpret,
+    register,
+    run_cycle,
+    start_reading,
+    synthesize,
+)
 
 ALICE = 3001
 
-READY = "ГОТОВО"
-COMPLETED = "ЗАВЕРШЕНО"
+INTERPRETATION = "INTERPRETATION"
+READY = "READY"
+COMPLETED = "COMPLETED"
 
 CRISIS_QUESTION = "Не хочу больше жить. Что мне делать?"
 
@@ -178,7 +189,12 @@ async def test_crisis_question_gets_the_fixed_reply_without_the_llm(client, llm,
     state = await get_state(client, headers, session_id)
     assert (state["state"], state["cycle_count"]) == (READY, 1)
     assert state["cycles"] == [
-        {"cards": [state["current_card"]], "question": CRISIS_QUESTION, "answer": CRISIS_REPLY}
+        {
+            "cycle_number": 1,
+            "question": CRISIS_QUESTION,
+            "cards": state["current_cards"],
+            "answer": CRISIS_REPLY,
+        }
     ]
     assert await db_rows("SELECT cycle_number, question, interpretation FROM reading_cycles") == [
         {"cycle_number": 1, "question": CRISIS_QUESTION, "interpretation": CRISIS_REPLY}
@@ -191,7 +207,7 @@ async def test_crisis_question_gets_the_fixed_reply_without_the_llm(client, llm,
     assert (await client.post(f"{READING}/next", json={"session_id": session_id}, headers=headers)).status_code == 200
     events = await run_cycle(client, headers, session_id, "Что меня ждёт на работе?")
     assert events[-2:] == [{"cleaned": llm.full_text}, "[DONE]"]
-    assert [call["question"] for call in llm.calls] == ["Что меня ждёт на работе?"]
+    assert [asked_question(call) for call in llm.calls] == ["Что меня ждёт на работе?"]
 
 
 async def test_crisis_cycle_failing_after_the_commit_is_finished_from_the_saved_row(client, llm, monkeypatch):
@@ -214,7 +230,7 @@ async def test_crisis_cycle_failing_after_the_commit_is_finished_from_the_saved_
     failed = await run_cycle(client, headers, session_id, CRISIS_QUESTION)
 
     assert failed[-2:] == [{"error": "interpretation_failed"}, "[DONE]"]
-    assert (await get_state(client, headers, session_id))["state"] == "ИНТЕРПРЕТАЦИЯ"
+    assert (await get_state(client, headers, session_id))["state"] == INTERPRETATION
 
     # The retry serves the saved row: no second insert, still no LLM.
     retried = await interpret(client, headers, session_id)

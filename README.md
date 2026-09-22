@@ -115,22 +115,22 @@ backend/
 ├── logging_config.py    # Structured logging
 ├── rate_limiter.py      # slowapi: лимиты на /auth, IP клиента из X-Forwarded-For
 ├── alembic/             # Миграции (единственный способ менять схему БД)
+├── decks/               # Манифесты колод: имена карт и картинки (<deck_id>.json)
 ├── models/              # ORM модели (User, TarotSession, ReadingCycle)
-├── prompts/             # Персона (persona.md) и конфиги раскладов (spreads/*.json)
+├── prompts/             # Персона (persona.md) и расклады (spreads/<spread_id>.json)
 ├── routes/              # API роуты (astrology, auth, reading; payments не подключён)
 ├── schemas/             # Pydantic схемы
-├── services/            # Бизнес-логика (auth, llm, password, reading, redis, tarot, zodiac)
+├── services/            # Бизнес-логика (auth, decks, llm, password, reading, redis, spreads, tarot, zodiac)
 └── tests/               # pytest: настоящие PostgreSQL и Redis, LLM заглушен
 
 frontend/
 ├── src/
 │   ├── App.tsx          # Root component + screen router
-│   ├── api/client.ts    # HTTP + SSE клиент
+│   ├── api/client.ts    # HTTP + SSE клиент, типы API
 │   ├── components/      # UI компоненты
-│   ├── hooks/           # React хуки (useTelegram)
-│   ├── styles/          # CSS
-│   └── utils/           # Утилиты (cardMap)
-└── public/              # Tarot card images (78 карт)
+│   ├── hooks/           # React хуки (useTelegram, useReadingSession)
+│   └── styles/          # CSS
+└── public/decks/        # Картинки колод (78 карт Rider-Waite и рубашка)
 ```
 
 ## API Endpoints
@@ -142,15 +142,22 @@ frontend/
 | POST | `/api/v1/auth/register` | Регистрация (логин + пароль, привязка к Telegram ID) |
 | POST | `/api/v1/auth/login` | Вход |
 | GET | `/api/v1/auth/me` | Текущий пользователь |
-| POST | `/api/v1/tarot/reading/start` | Начать расклад |
+| GET | `/api/v1/tarot/spreads` | Расклады, с которыми можно начать (id, имя, число карт, предел циклов, тариф) |
+| GET | `/api/v1/tarot/decks` | Колоды, с которыми можно начать (id, имя, рубашка) |
+| POST | `/api/v1/tarot/reading/start` | Начать расклад (необязательные `spread_id` и `deck_id`) |
 | GET | `/api/v1/tarot/reading/active` | Незавершённый расклад пользователя |
 | POST | `/api/v1/tarot/reading/ask` | Задать вопрос |
-| POST | `/api/v1/tarot/reading/draw` | Вытянуть карту (RNG на бэкенде) |
+| POST | `/api/v1/tarot/reading/draw` | Вытянуть карты расклада (RNG на бэкенде) |
 | POST | `/api/v1/tarot/reading/interpret` | SSE стриминг толкования |
 | POST | `/api/v1/tarot/reading/next` | Следующий цикл |
 | POST | `/api/v1/tarot/reading/synthesis` | Итоговый синтез: ответ LLM сначала сохраняется целиком, затем отдаётся по SSE чанками; сбой LLM — 502 |
 | GET | `/api/v1/tarot/reading/state` | Состояние расклада |
 | GET | `/api/v1/tarot/reading/history` | История раскладов (по умолчанию последние 3 без подписки, 50 с подпиской) |
+
+Действия расклада (`/start`, `/ask`, `/draw`, `/next`) отвечают состоянием целиком
+(`ReadingStateResponse`), так что отдельный `/state` после них не нужен. Карта в любом ответе —
+объект `DrawnCard {deck_id, card_id, position, reversed, name, image}`: имена карт и пути к
+картинкам приходят с сервера, клиент их не знает. Схемы — `backend/schemas/tarot.py`.
 
 ## Миграции
 
@@ -265,6 +272,13 @@ server default, переименовывает `users_login_key` в `uq_users_lo
 > backend это не мешает, `downgrade` её учитывает (`CREATE TABLE IF NOT EXISTS`), но
 > `alembic check` покажет лишнюю таблицу — её можно просто удалить: `DROP TABLE chat_histories;`.
 
+> **Внимание:** `f4a5b6c7d8e9` (этап 2) переносит карты циклов из колонок `card_id`/`card_name`
+> в JSONB-колонку `reading_cycles.cards` и добавляет `tarot_sessions.spread_id`/`deck_id`.
+> Старые колонки остаются и продолжают заполняться по первой карте цикла, поэтому `downgrade`
+> восстанавливает их из `cards`. Но имя карты вне колоды Rider-Waite номером 1..78 не
+> выражается: такая строка после отката останется с `card_id IS NULL` (имя сохранится), и
+> код до этапа 2 её не покажет. Пока в репозитории одна колода, этого случиться не может.
+
 ## Тесты
 
 Тесты бэкенда лежат в `backend/tests` и ходят в приложение по HTTP (httpx поверх ASGI, с
@@ -304,6 +318,11 @@ Windows запускайте с префиксом `MSYS_NO_PATHCONV=1`, ина�
   initData тестовым токеном `123456:TEST` тем же HMAC, что и Telegram.
 - Rate limit (slowapi) в тестах выключен, кроме одного теста с фикстурой `rate_limits_on`.
 - Фикстура `llm` отдаёт фиксированные чанки; `llm.fail = True` — LLM, падающая посреди стрима.
+  Фикстуры `two_card_spread` и `tiny_deck` подкладывают расклад и колоду, которых нет в
+  репозитории: так проверяется, что и то и другое добавляется одним файлом, без правок кода.
+- `test_migration.py` гоняет `alembic downgrade`/`upgrade` по `morlana_test` и всегда
+  возвращает её на head. Тест с картинками колоды пропускается в backend-контейнере
+  (`frontend/public` в него не смонтирован) и выполняется в CI.
 - `test_llm_client.py` собирает настройки только из своих значений: переменные `LLM_*` и
   `OPENAI_*` (в том числе `OPENAI_PROJECT_ID`, который SDK иначе подставил бы в `OpenAI-Project`)
   на время теста удаляются из окружения.

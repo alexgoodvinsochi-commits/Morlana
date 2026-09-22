@@ -13,9 +13,11 @@ https://claude.ai/artifact/LqFp3r5WRWLZ11BCyXCj7M
    применены к рабочей базе (ревизия `e3f4a5b6c7d8`), история раскладов больше не удаляется,
    неверный переход состояния отвечает 409, тесты pytest на настоящих PostgreSQL и Redis, CI в
    GitHub Actions.
-3. **Этап 2. Контракт домена** — следующий. Единый тип карты
+3. **Этап 2. Контракт домена** — сделан в рабочем дереве (коммита ещё нет). Единый тип карты
    `DrawnCard {deck_id, card_id, position, reversed, name, image}`, реестр раскладов из
-   `prompts/spreads/*.json`, хук `useReadingSession` вместо логики внутри `ReadingScreen.tsx`.
+   `prompts/spreads/*.json` и реестр колод из `backend/decks/*.json`, состояние расклада одним
+   документом в Redis, миграция `f4a5b6c7d8e9`, хук `useReadingSession` вместо логики внутри
+   `ReadingScreen.tsx`. Новая колода — папка картинок и манифест, новый расклад — один файл.
 4. **Редизайн экрана расклада** — после этапа 2, чтобы новый экран не зашил одну карту.
    Утверждённое превью: https://claude.ai/artifact/S3s73k4Yh69vrxfHVyX9jk
 5. **Этап 3. Квоты и надёжность LLM.** Списание квоты, дневные лимиты и общий бюджет, таймауты и
@@ -30,7 +32,8 @@ https://claude.ai/artifact/LqFp3r5WRWLZ11BCyXCj7M
 ## Текущий статус
 
 - Telegram Mini App: логин и пароль как второй фактор Telegram-аккаунта, онбординг, дашборд,
-  расклады (1 карта, до 6 циклов), синтез, история. Архивные расклады не удаляются; экран истории
+  расклады (в репозитории один — «Одна карта», до 6 циклов; число карт и циклов задаёт файл
+  расклада), синтез, история. Архивные расклады не удаляются; экран истории
   показывает последние 3 без подписки и 50 с подпиской (`HISTORY_LIMIT_FREE`,
   `HISTORY_LIMIT_PREMIUM`)
 - Backend: FastAPI + PostgreSQL + Redis, LLM — OpenAI-совместимый провайдер (MiMo или Yandex AI
@@ -90,10 +93,11 @@ https://claude.ai/artifact/LqFp3r5WRWLZ11BCyXCj7M
 
 ### 5. Прочее
 
-- [ ] Перенести `SYNTHESIS_PROMPT` из `llm.py` в JSON расклада — входит в этап 2 (реестр раскладов)
+- [x] Перенести `SYNTHESIS_PROMPT` из `llm.py` в JSON расклада — сделано на этапе 2 (поле
+  `synthesis_prompt` файла расклада)
 - [ ] Synthesis button bug на 6-м цикле. На бэкенде путь проверен тестом
   `test_sixth_cycle_completes_the_reading_automatically`: после 6-го цикла расклад сам переходит в
-  `ЗАВЕРШЕНО`, `/synthesis` его принимает. В интерфейсе на живом стеке не перепроверено
+  `COMPLETED`, `/synthesis` его принимает. В интерфейсе на живом стеке не перепроверено
 - [x] Rate limiting: конфликт slowapi и общего IP за nginx исправлен в `0ad030a` — ключ лимита
   берётся из `X-Forwarded-For`, который дописывает nginx (`rate_limiter.py`). Лимиты стоят только
   на `/auth/*`; лимиты на вызовы LLM — этап 3, хранение лимитов в Redis — этап 5

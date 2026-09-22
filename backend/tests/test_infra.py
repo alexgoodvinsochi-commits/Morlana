@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import sys
@@ -9,7 +10,7 @@ import pytest
 from alembic.script import ScriptDirectory
 from sqlalchemy.exc import IntegrityError
 
-from tests.helpers import AUTH, db_execute, db_scalar
+from tests.helpers import AUTH, db_execute, db_rows, db_scalar
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 
@@ -137,6 +138,37 @@ async def test_database_rejects_a_duplicate_cycle_number():
         await db_execute(insert_cycle, id=session_id)
 
     assert await db_scalar("SELECT count(*) FROM reading_cycles") == 1
-    # Server defaults from the reconcile migration fill everything the INSERT left out.
+    # Server defaults fill everything the INSERT left out, the stage-2 columns too.
     assert await db_scalar("SELECT status FROM tarot_sessions") == "active"
     assert await db_scalar("SELECT free_requests_left FROM users") == 3
+    assert await db_rows("SELECT spread_id, deck_id FROM tarot_sessions") == [
+        {"spread_id": "one-card", "deck_id": "rider-waite"}
+    ]
+
+
+async def test_a_cycle_can_be_stored_with_cards_and_no_legacy_number():
+    """Stage 2: `cards` is the truth and card_id is nullable, for decks it cannot number."""
+    session_id = str(uuid.uuid4())
+    cards = [
+        {
+            "deck_id": "rider-waite",
+            "card_id": "maj00",
+            "position": "main",
+            "reversed": False,
+            "name": "Шут",
+            "image": "/decks/rider-waite/maj00.jpg",
+        }
+    ]
+    await db_execute("INSERT INTO users (telegram_id, real_name) VALUES (3002, 'Алиса')")
+    await db_execute("INSERT INTO tarot_sessions (id, user_id) VALUES (:id, 3002)", id=session_id)
+
+    await db_execute(
+        "INSERT INTO reading_cycles (session_id, cycle_number, question, cards, interpretation) "
+        "VALUES (:id, 1, 'Вопрос', CAST(:cards AS jsonb), 'Ответ')",
+        id=session_id,
+        cards=json.dumps(cards),
+    )
+
+    assert await db_rows("SELECT cards, card_id, card_name FROM reading_cycles") == [
+        {"cards": cards, "card_id": None, "card_name": None}
+    ]

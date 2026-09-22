@@ -1,7 +1,7 @@
 from datetime import date, datetime, time, timezone
 
 from sqlalchemy import BigInteger, ForeignKey, Index, Integer, String, Text, Time, UniqueConstraint, func, text
-from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
+from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database import Base
@@ -46,6 +46,10 @@ class TarotSession(Base):
     cycle_count: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
     synthesis: Mapped[str | None] = mapped_column(Text, nullable=True)
     spread_name: Mapped[str] = mapped_column(String(100), default="one-card", server_default="one-card")
+    # The spread and the deck the reading was started with: ids of
+    # backend/prompts/spreads/<id>.json and backend/decks/<id>.json.
+    spread_id: Mapped[str] = mapped_column(String(50), default="one-card", server_default="one-card")
+    deck_id: Mapped[str] = mapped_column(String(50), default="rider-waite", server_default="rider-waite")
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True), default=lambda: datetime.now(timezone.utc), server_default=func.now()
     )
@@ -69,7 +73,11 @@ class ReadingCycle(Base):
     )
     cycle_number: Mapped[int] = mapped_column(Integer)
     question: Mapped[str] = mapped_column(Text)
-    card_id: Mapped[int] = mapped_column(Integer)
+    # Every card of the cycle, as DrawnCard-shaped objects (services.decks).
+    cards: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    # Pre-stage-2 card identity: the 1..78 number and the name of the FIRST card.
+    # Still written so older rows and readers keep working; `cards` is the truth.
+    card_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     card_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     interpretation: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(

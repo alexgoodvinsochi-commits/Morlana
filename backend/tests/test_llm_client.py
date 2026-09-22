@@ -67,7 +67,21 @@ def _settings_from_env(monkeypatch, **env):
     return settings
 
 
-async def _predict(monkeypatch, client, *, is_premium: bool = False) -> tuple[str, httpx.Request]:
+MESSAGES = [
+    {"role": "system", "content": "Ты таролог. Карты:\nГлавная карта: Шут"},
+    {"role": "user", "content": "Что меня ждёт?"},
+]
+
+
+def _default_spread():
+    from services.spreads import spread_registry
+
+    return spread_registry.default
+
+
+async def _predict(
+    monkeypatch, client, *, is_premium: bool = False, spread=None
+) -> tuple[str, httpx.Request]:
     """The real stream_prediction against a fake provider: the text and the one request it got."""
     import services.llm
 
@@ -82,7 +96,7 @@ async def _predict(monkeypatch, client, *, is_premium: bool = False) -> tuple[st
         chunks = [
             chunk
             async for chunk in services.llm.stream_prediction(
-                cards=[1], question="Что меня ждёт?", user_name="Алиса", is_premium=is_premium
+                messages=MESSAGES, spread=spread or _default_spread(), is_premium=is_premium
             )
         ]
 
@@ -97,7 +111,10 @@ async def test_without_an_api_key_there_is_no_client_and_the_stub_answers(monkey
 
     assert services.llm.build_client() is None
     monkeypatch.setattr(services.llm, "client", None)
-    chunks = [c async for c in services.llm.stream_prediction(cards=[1], question="?", user_name="Алиса")]
+    chunks = [
+        c
+        async for c in services.llm.stream_prediction(messages=MESSAGES, spread=_default_spread())
+    ]
     assert chunks == ["[Модуль ИИ не настроен. Установите LLM_API_KEY в .env]"]
 
 
@@ -151,6 +168,22 @@ async def test_yandex_settings_reach_the_provider(monkeypatch, is_premium, model
     body = json.loads(request.content)
     assert body["model"] == f"gpt://{FOLDER}/{model}"
     assert body["stream"] is True
+    assert body["messages"] == MESSAGES
+    # The spread, not the code, sets the sampling parameters.
+    assert (body["max_tokens"], body["temperature"]) == (2048, 0.7)
+
+
+async def test_the_spread_sets_max_tokens_and_temperature(monkeypatch):
+    """A spread file is enough to change what the provider is asked for."""
+    import services.llm
+
+    _settings_from_env(monkeypatch, **YANDEX_ENV)
+    spread = _default_spread().model_copy(update={"max_tokens": 321, "temperature": 0.11})
+
+    _, request = await _predict(monkeypatch, services.llm.build_client(), spread=spread)
+
+    body = json.loads(request.content)
+    assert (body["max_tokens"], body["temperature"]) == (321, 0.11)
 
 
 async def test_llm_project_wins_over_the_sdk_environment_fallback(monkeypatch):

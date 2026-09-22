@@ -12,7 +12,7 @@ from rate_limiter import limiter
 from config import settings
 from database import check_schema_revision
 from logging_config import setup_logging
-from routes import astrology_router, reading_router, auth_router
+from routes import astrology_router, catalog_router, reading_router, auth_router
 from services.redis import redis_service
 
 logger = logging.getLogger(__name__)
@@ -71,6 +71,7 @@ app.add_middleware(
 )
 
 app.include_router(astrology_router)
+app.include_router(catalog_router)
 app.include_router(reading_router)
 app.include_router(auth_router)
 # app.include_router(payments_router)

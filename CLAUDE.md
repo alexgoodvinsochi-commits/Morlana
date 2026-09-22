@@ -2,7 +2,7 @@
 
 Morlana — Telegram Mini App «ИИ-Таролог»: пользователь задаёт вопрос, сервер тянет карту Таро, LLM стримит толкование; до 6 циклов в раскладе, затем синтез и архив в историю. Интерфейс на русском.
 
-- `backend/`: Python 3.12, FastAPI 0.115, SQLAlchemy 2 async + psycopg 3 (не asyncpg), Postgres 14, Redis 7, Alembic, slowapi, LLM через `AsyncOpenAI` (OpenAI-совместимый провайдер MiMo).
+- `backend/`: Python 3.12, FastAPI 0.115, SQLAlchemy 2 async + psycopg 3 (не asyncpg), Postgres 14, Redis 7, Alembic, slowapi, LLM через `AsyncOpenAI` у OpenAI-совместимого провайдера: MiMo или Yandex AI Studio, выбор только переменными `LLM_*` (задача 11).
 - `frontend/`: React 18 + TypeScript strict + Vite, без роутера, стейт-библиотек и CSS-фреймворков. В compose его отдаёт nginx на `:3000` и проксирует `/api/` на `backend:8000`.
 
 Здесь только то, что не видно из кода за минуту. Остальное не дублируй, а ссылайся:
@@ -18,7 +18,7 @@ Morlana — Telegram Mini App «ИИ-Таролог»: пользователь 
 - Отвечай по-русски. Код, комментарии, логи, `detail` ошибок, commit messages — английский. Тексты UI и промпты LLM — русский.
 - Спроси разрешения ДО: `git push`; запуска ngrok или `start.ps1` (приложение становится публичным); правки `.env`; любого изменения базы `morlana_db`, включая запуск стека с новой миграцией в дереве; перезапуска или остановки работающего стека (в том числе `up --build`); удаления данных.
 - Заметные изменения (документы, контракты, архитектура) сначала показывай планом или черновиком на утверждение.
-- `.env` не читать и не печатать. Имена переменных — в `backend/config.py` и `.env.example`.
+- `.env` не читать и не печатать. Имена переменных — в `backend/config.py` и `.env.example`. То же для `C:\Users\user\morlana-secrets\` (там ключ Yandex AI Studio; вне репозитория, потому что репозиторий на GitHub публичный): не читать, не копировать, в контейнер — только `docker run --env-file <файл>`.
 - Правки хирургические: не рефактори соседний код заодно. Форматтера нет — не переформатируй файлы целиком. Мёртвый код (список в конце) не оживляй и не удаляй без запроса.
 - Не забегай вперёд: задачи следующего этапа не делаются «по пути». Порядок этапов — в `instructions.md` (раздел 8) и `docs/ROADMAP.md`.
 
@@ -42,9 +42,10 @@ Morlana — Telegram Mini App «ИИ-Таролог»: пользователь 
 11. Архивные расклады не удаляются никогда; лимит истории (`HISTORY_LIMIT_FREE` = 3, `HISTORY_LIMIT_PREMIUM` = 50) применяется только при чтении. `/start` удаляет лишь пустые просроченные активные сессии.
 12. В генераторе `/interpret` порядок записи фиксирован: commit в Postgres -> `cycle_data` в Redis -> переход состояния последним, чтобы сбой БД не оставил расклад в `ГОТОВО` без сохранённого цикла. Любая ошибка оставляет `ИНТЕРПРЕТАЦИЯ`, откуда `/interpret` повторяется. Если строка цикла уже закоммичена, а сбой случился позже, повтор завершает цикл из сохранённой строки без нового вызова LLM: вторая вставка нарушила бы `uq_reading_cycles_session_cycle`.
 
-Расход LLM
+LLM: расход и кризисные сообщения
 
-13. Квот нет: `users.free_requests_left` не проверяется и не уменьшается, на эндпоинтах расклада нет rate limit, длина вопроса не ограничена. Каждый `/interpret` и `/synthesis` — платный вызов провайдера: не гоняй их скриптами и циклами по живому стеку, для проверки хватает одного ручного вызова с согласия владельца. Тесты к провайдеру не ходят никогда (фикстура `llm` подменяет `routes.reading.stream_prediction`). Квоты — этап 3, точечно раньше не вводи.
+13. Квот нет: `users.free_requests_left` не проверяется и не уменьшается, на эндпоинтах расклада нет rate limit, длина вопроса не ограничена. Каждый `/interpret` и `/synthesis` — платный вызов провайдера: не гоняй их скриптами и циклами по живому стеку, для проверки хватает одного ручного вызова с согласия владельца. Тесты к провайдеру не ходят никогда (фикстура `llm` подменяет `routes.reading.stream_prediction`, а `test_llm_client.py` гоняет настоящий `stream_prediction` через `httpx.MockTransport`). Квоты — этап 3, точечно раньше не вводи.
+14. Кризисные сообщения распознаёт сервер, детерминированно и до LLM (`services/safety.py`): если вопрос цикла кризисный (`is_crisis_message`), `/interpret` не зовёт LLM и отдаёт `CRISIS_REPLY` тем же путём, что обычный ответ (те же SSE-события, порядок записи из инварианта 12, цикл засчитывается), а `/synthesis` делает `CRISIS_REPLY` синтезом, если такой вопрос есть хоть в одном цикле. Правило в `persona.md` — только второй слой: `aliceai-llm-flash` его не выполнила. Не переноси проверку в промпт и не ставь её после вызова LLM; в лог идёт `session_id`, но не текст вопроса. Спорные фразы и принятые решения — комментарий в модуле; номера телефонов в `CRISIS_REPLY` и `persona.md` совпадают, это проверяет `test_safety.py`.
 
 Парные контракты: ломаются молча, меняй обе стороны в одном коммите
 
@@ -90,9 +91,9 @@ docker compose run --rm --no-deps --user root -e DATABASE_URL=postgresql+psycopg
 cd frontend; npm run build     # tsc + vite build — единственная проверка фронтенда (lint и тестов нет)
 ```
 
-- Нужны поднятые `db` и `redis`; работающие `backend` и `frontend` команда не трогает. Прогон занимает 1-2 минуты вместе с установкой dev-зависимостей (56 тестов на 22.09.2026). Устройство стенда и CI — `README.md`, разделы «Тесты» и «CI».
-- Что чем закреплено: `test_auth.py` — initData, register, login, `/me`, rate limit; `test_reading.py` — автомат, владение, `/start`, история, сбои LLM; `test_infra.py` — загрузочные проверки, старт только на head, совпадение моделей со схемой, уникальность цикла; `test_astrology.py` — `/astrology/bonus`.
-- Каждое изменение поведения закрывай тестом. Готовые шаги — в `tests/helpers.py` (`sign_init_data`, `auth_headers`, `register`, `start_reading`, `run_cycle`, `synthesize`, `parse_sse`, `db_rows`); фикстуры `client`, `llm` (`llm.fail = True` — сбой провайдера), `rate_limits_on`. ruff проверяет только корректность (`E9`, `F`).
+- Нужны поднятые `db` и `redis`; работающие `backend` и `frontend` команда не трогает. Прогон занимает 1-2 минуты вместе с установкой dev-зависимостей (183 теста на 22.09.2026). Устройство стенда и CI — `README.md`, разделы «Тесты» и «CI».
+- Что чем закреплено: `test_auth.py` — initData, register, login, `/me`, rate limit; `test_reading.py` — автомат, владение, `/start`, история, сбои LLM; `test_infra.py` — загрузочные проверки, старт только на head, совпадение моделей со схемой, уникальность цикла; `test_astrology.py` — `/astrology/bonus`; `test_llm_client.py` — клиент провайдера из настроек (URL, ключ, `OpenAI-Project`, заголовок логирования, модель); `test_llm_prompts.py` — правила персоны в промптах толкования и синтеза, очистка ответа `clean_llm_output`; `test_safety.py` — фразы, которые `is_crisis_message` ловит и не ловит, `CRISIS_REPLY` вместо LLM в `/interpret` и `/synthesis`.
+- Каждое изменение поведения закрывай тестом. Готовые шаги — в `tests/helpers.py` (`sign_init_data`, `auth_headers`, `register`, `start_reading`, `run_cycle`, `synthesize`, `parse_sse`, `db_rows`); фикстуры `client`, `llm` (`llm.fail = True` — сбой провайдера, `llm.calls` — сделанные вызовы), `rate_limits_on`. ruff проверяет только корректность (`E9`, `F`).
 
 ### 4. Изменить схему БД
 
@@ -138,7 +139,8 @@ docker compose exec -T db rm -f /tmp/$name
 - Хранение: Redis держит незавершённое (`reading:{sid}:state|cycle|question|card|cycle_data`, TTL 3600 с; строки пишутся как есть, остальное JSON, а при чтении всё идёт через `json.loads`, так что вопрос вида `42` вернётся числом), Postgres — долговечное (`tarot_sessions`, `reading_cycles`). Через час без действий расклад недоступен UI, следующий `/start` его заархивирует или удалит. `RedisService` глотает ошибки: отказ Redis выглядит как 404 `Reading not found`, сбой подключения при старте — только warning.
 - `/synthesis` не живой стрим: ответ LLM собирается целиком, коммитится (`status='archived'`), затем проигрывается чанками. Сбой или пустой ответ LLM -> 502 `Synthesis failed`, расклад не архивируется, остаётся в `ЗАВЕРШЕНО`, повтор допустим. Клиент ключ `error` в SSE игнорирует: о сбое `/interpret` экран узнаёт, перечитав `/state`.
 - FastAPI 0.115 закрывает `Depends(get_db)` ДО выполнения тела `StreamingResponse`. Генератор `/interpret` всё ещё пишет в `db`; это работает лишь за счёт переоткрытия `AsyncSession` и `expire_on_commit=False`. Не добавляй в SSE-генераторы логики, завязанной на сессию запроса, и не обновляй FastAPI мимоходом; исправление — этап 3.
-- Пустой баланс у провайдера LLM даёт его 402: `/interpret` завершится SSE-сообщением с ключом `error`, расклад останется в `ИНТЕРПРЕТАЦИЯ`; `/synthesis` ответит 502. Это не баг кода.
+- Ошибка провайдера LLM (у MiMo пустой баланс — 402; у Yandex AI Studio 402 не бывает, ждите 401/403 при проблеме с ключом, ролью или платёжным аккаунтом и 429 при исчерпании квот): `/interpret` завершится SSE-сообщением с ключом `error`, расклад останется в `ИНТЕРПРЕТАЦИЯ`; `/synthesis` ответит 502. Это не баг кода.
+- Модерация Yandex включена по умолчанию: вместо толкования может прийти заглушка вида «Я не могу обсуждать эту тему...», возможно с `finish_reason` `content_filter`. Код `finish_reason` не смотрит: такой текст сохранится как обычное толкование или синтез, и только пустой ответ считается сбоем.
 
 ### 7. Добавить расклад или колоду
 
@@ -166,6 +168,12 @@ docker compose exec -T db rm -f /tmp/$name
 - Коммиты — английские Conventional Commits в нижнем регистре со scope по желанию (`feat:`, `fix(auth):`, `chore(security):`); у крупных — тело списком по областям. Работа идёт в ветках `feature/*`, основная — `main`; `git push` только после разрешения.
 - Предупреждения git `LF will be replaced by CRLF` — шум. BOM в начале `start.ps1` оставлен намеренно.
 
+### 11. Сменить провайдера LLM
+
+- Провайдер задают только переменные `LLM_*` в `.env` (правка `.env` и перезапуск стека — с разрешения владельца); код один для всех, клиент строит `build_client()` в `services/llm.py`. Блок-пример для Yandex закомментирован в `.env.example`. Пустое `LLM_DATA_LOGGING=` backend не примет: только `true` или `false`.
+- Yandex AI Studio: `LLM_BASE_URL=https://ai.api.cloud.yandex.net/v1`; `LLM_PROJECT` — id каталога, уходит заголовком `OpenAI-Project`; `LLM_DATA_LOGGING=false` шлёт `x-data-logging-enabled: false` (Yandex не логирует запросы); модели — полные URI `gpt://<folder>/aliceai-llm-flash` и `gpt://<folder>/aliceai-llm`, а не короткие имена. При пустых `LLM_PROJECT` и `LLM_BASE_URL` SDK `openai` сам возьмёт `OPENAI_PROJECT_ID` и `OPENAI_BASE_URL` из окружения, если они там есть.
+- MiMo: `mimo-v2-flash` (умолчание в `config.py`) снят 30.06.2026; `mimo-v2.5` и `mimo-v2.5-pro` (стоят в `.env.example`) перестают работать 21.10.2026, преемники — `mimo-v2.6-flash` и `mimo-v2.6-pro`.
+
 ## Карта кода
 
 ```
@@ -173,7 +181,7 @@ backend/main.py            app, lifespan (DEV_MODE guard, проверка ре�
 backend/config.py          Settings (pydantic-settings); database.py — engine, get_db, check_schema_revision
 backend/rate_limiter.py    slowapi limiter + client_ip;  logging_config.py — формат логов, приглушение httpx
 backend/routes/            reading.py (+ общие auth-хелперы), auth.py, astrology.py; payments.py не подключён
-backend/services/          auth, password, reading (автомат), redis, llm (промпты, имена карт), tarot (RNG), zodiac
+backend/services/          auth, password, reading (автомат), redis, llm (клиент провайдера, промпты, имена карт), safety (кризисные сообщения), tarot (RNG), zodiac
 backend/models/user.py     User, TarotSession, ReadingCycle;  backend/schemas/tarot.py — Pydantic-схемы
 backend/prompts/           persona.md, spreads/one-card.json;  backend/alembic/versions/ — линейная цепочка, один head
 backend/tests/             conftest.py (стенд), helpers.py, test_*.py;  .github/workflows/ci.yml — CI

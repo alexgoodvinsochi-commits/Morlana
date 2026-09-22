@@ -255,6 +255,7 @@
 .synthesis-text p {
   color: #d4c5a9;
   line-height: 1.6;
+  white-space: pre-line;
 }
 
 .reading-actions {

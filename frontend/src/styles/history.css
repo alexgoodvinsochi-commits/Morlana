@@ -61,6 +61,10 @@
   margin-bottom: 8px;
 }
 
+.history-synthesis p {
+  white-space: pre-line;
+}
+
 .empty-history {
   text-align: center;
   color: #a89878;

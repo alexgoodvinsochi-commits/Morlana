@@ -41,6 +41,7 @@ from services.llm import (
 )
 from services.redis import redis_service
 from services.reading import SESSION_TTL
+from services.safety import CRISIS_REPLY, is_crisis_message
 
 logger = logging.getLogger(__name__)
 
@@ -354,15 +355,22 @@ async def reading_interpret(
                 yield f"data: {json.dumps({'text': cleaned_answer})}\n\n"
             else:
                 full_response = []
-                async for chunk in stream_prediction(
-                    cards=cards,
-                    question=question,
-                    user_name=user.real_name,
-                    is_premium=is_premium,
-                    custom_messages=custom_messages,
-                ):
-                    full_response.append(chunk)
-                    yield f"data: {json.dumps({'text': chunk})}\n\n"
+                if is_crisis_message(question):
+                    # No LLM for a person in crisis: the fixed reply takes the normal
+                    # path below, so the cycle is saved and the reading goes on.
+                    logger.info("Interpretation skipped the LLM, crisis message detected: session=%s", req.session_id)
+                    full_response.append(CRISIS_REPLY)
+                    yield f"data: {json.dumps({'text': CRISIS_REPLY})}\n\n"
+                else:
+                    async for chunk in stream_prediction(
+                        cards=cards,
+                        question=question,
+                        user_name=user.real_name,
+                        is_premium=is_premium,
+                        custom_messages=custom_messages,
+                    ):
+                        full_response.append(chunk)
+                        yield f"data: {json.dumps({'text': chunk})}\n\n"
 
                 raw_answer = "".join(full_response)
                 cleaned_answer = clean_llm_output(raw_answer)
@@ -448,17 +456,22 @@ async def reading_synthesis(
     # An LLM failure must not archive the reading: it stays active and in ЗАВЕРШЕНО,
     # so /synthesis can simply be called again.
     full_response = []
-    try:
-        async for chunk in stream_prediction(
-            cards=[],
-            question="",
-            user_name=user.real_name,
-            custom_messages=custom_messages,
-        ):
-            full_response.append(chunk)
-    except Exception:
-        logger.exception("Synthesis failed: session=%s", req.session_id)
-        raise HTTPException(status_code=502, detail="Synthesis failed")
+    if any(is_crisis_message(cycle.get("question")) for cycle in cycles):
+        # A reading with a crisis message gets no LLM synthesis either.
+        logger.info("Synthesis skipped the LLM, crisis message detected: session=%s", req.session_id)
+        full_response.append(CRISIS_REPLY)
+    else:
+        try:
+            async for chunk in stream_prediction(
+                cards=[],
+                question="",
+                user_name=user.real_name,
+                custom_messages=custom_messages,
+            ):
+                full_response.append(chunk)
+        except Exception:
+            logger.exception("Synthesis failed: session=%s", req.session_id)
+            raise HTTPException(status_code=502, detail="Synthesis failed")
 
     raw_answer = "".join(full_response)
     cleaned_answer = clean_llm_output(raw_answer)

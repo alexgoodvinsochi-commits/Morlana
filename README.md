@@ -2,12 +2,16 @@
 
 Telegram Mini App для персонализированных раскладов Таро с ИИ.
 
+Агентам и контрибьюторам: как работать в репозитории — `CLAUDE.md`, правила продукта — `instructions.md`.
+
 ## Технологии
 
 - **Frontend:** React 18 + TypeScript + Vite
 - **Backend:** FastAPI (Python 3.12)
-- **База данных:** PostgreSQL 14
-- **ИИ:** MiMo LLM API (GPT-4o-mini для фри-тера, Claude/GPT-4o для премиума)
+- **База данных:** PostgreSQL 14; состояние расклада — Redis 7
+- **ИИ:** OpenAI-совместимый провайдер MiMo через `AsyncOpenAI` (SDK `openai`). Модели задаются
+  переменными `LLM_FREE_MODEL` (толкования без подписки и итоговый синтез) и `LLM_PREMIUM_MODEL`
+  (толкования при активной подписке)
 
 ## Быстрый старт
 
@@ -30,6 +34,9 @@ docker compose up --build
 
 ### Локальная разработка
 
+На хостах, где Python не может запустить async SQLAlchemy (например, Windows с политикой
+Application Control), команды backend выполняйте в Docker — см. `CLAUDE.md`.
+
 ```bash
 # Backend
 cd backend
@@ -47,28 +54,53 @@ npm run dev
 
 ## Переменные окружения
 
-| Переменная | Описание |
-|------------|----------|
-| `TELEGRAM_BOT_TOKEN` | Токен бота из @BotFather |
-| `DATABASE_URL` | URL подключения к PostgreSQL |
-| `LLM_API_KEY` | API ключ LLM провайдера |
-| `LLM_BASE_URL` | Базовый URL API LLM |
-| `PAYMENT_PROVIDER_TOKEN` | Токен платежной системы |
-| `CORS_ORIGINS` | Разрешённые origins (через запятую) |
+Backend читает их из `.env` (`backend/config.py`); шаблон — `.env.example`. В `docker compose`
+для `migrate` и `backend` переменные `DATABASE_URL` и `REDIS_URL` переопределяются на сервисы
+`db` и `redis`, остальные берутся из корневого `.env`.
+
+| Переменная | Описание | По умолчанию |
+|------------|----------|--------------|
+| `TELEGRAM_BOT_TOKEN` | Токен бота из @BotFather; ключ проверки подписи initData. Пусто — любой подписанный initData отклоняется | пусто |
+| `DATABASE_URL` | URL PostgreSQL, только драйвер psycopg 3 (`postgresql+psycopg://`). Его же берёт Alembic | `postgresql+psycopg://user:pass@localhost:5432/morlana_db` |
+| `REDIS_URL` | URL Redis: состояние незавершённого расклада | `redis://localhost:6379/0` |
+| `LLM_API_KEY` | Ключ OpenAI-совместимого провайдера. Пусто — вместо ответа LLM приходит заглушка «Модуль ИИ не настроен» | пусто |
+| `LLM_BASE_URL` | Базовый URL API провайдера. Пусто — адрес OpenAI по умолчанию | пусто |
+| `LLM_FREE_MODEL` | Модель толкований без подписки и итогового синтеза | `mimo-v2-flash` |
+| `LLM_PREMIUM_MODEL` | Модель толкований при активной подписке (`subscription_ends_at` в будущем) | `mimo-v2-flash` |
+| `CORS_ORIGINS` | Разрешённые origins через запятую, **без пробелов** (строка делится по запятой без обрезки) | `http://localhost:3000` |
+| `DEV_MODE` | Только для локальной разработки: запрос без подписи Telegram считается одним фиксированным dev-аккаунтом; подпись, если она есть, проверяется всё равно. Backend не стартует, если при `DEV_MODE=true` в `CORS_ORIGINS` есть адрес не с `localhost`/`127.0.0.1` (например, ngrok) | `false` |
+| `INIT_DATA_MAX_AGE` | Сколько секунд действует initData (по `auth_date`) | `86400` |
+| `HISTORY_LIMIT_FREE` | Сколько архивных раскладов отдаёт `/history` без подписки. Из базы ничего не удаляется | `3` |
+| `HISTORY_LIMIT_PREMIUM` | То же при активной подписке | `50` |
+| `PAYMENT_PROVIDER_TOKEN` | Токен Telegram Payments. Пока не используется: роут оплаты не подключён | пусто |
+| `SKIP_ONBOARDING` | Не используется: объявлена в `config.py`, код её не читает | `true` |
+
+Колонка «По умолчанию» — значения из `config.py`. В `.env.example` для моделей стоят другие имена:
+`mimo-v2.5` и `mimo-v2.5-pro`.
+
+Фронтенд: `VITE_API_URL` (`frontend/.env.example`) — адрес API для `npm run dev`; в сборке для
+nginx он пустой, запросы идут на тот же origin. Build-аргумент `VITE_SKIP_ONBOARDING`
+(`frontend/Dockerfile`, `docker-compose.yml`) не используется: исходники его не читают.
 
 ## Архитектура
 
 ```
+.github/workflows/
+└── ci.yml               # CI: ruff, миграции на пустой базе, pytest, сборка фронтенда
+
 backend/
 ├── main.py              # FastAPI entry point
 ├── config.py            # Pydantic settings
 ├── database.py          # SQLAlchemy async engine + проверка ревизии схемы
 ├── logging_config.py    # Structured logging
+├── rate_limiter.py      # slowapi: лимиты на /auth, IP клиента из X-Forwarded-For
 ├── alembic/             # Миграции (единственный способ менять схему БД)
 ├── models/              # ORM модели (User, TarotSession, ReadingCycle)
-├── routes/              # API роуты (astrology, auth, reading)
+├── prompts/             # Персона (persona.md) и конфиги раскладов (spreads/*.json)
+├── routes/              # API роуты (astrology, auth, reading; payments не подключён)
 ├── schemas/             # Pydantic схемы
-└── services/            # Бизнес-логика (auth, llm, tarot, zodiac)
+├── services/            # Бизнес-логика (auth, llm, password, reading, redis, tarot, zodiac)
+└── tests/               # pytest: настоящие PostgreSQL и Redis, LLM заглушен
 
 frontend/
 ├── src/
@@ -86,7 +118,7 @@ frontend/
 | Метод | Путь | Описание |
 |-------|------|----------|
 | GET | `/health` | Health check |
-| POST | `/api/v1/astrology/bonus` | Онбординг + зодиакальный анализ |
+| POST | `/api/v1/astrology/bonus` | Профиль и знак зодиака по дате рождения, шаблонное приветствие (интерфейс не вызывает) |
 | POST | `/api/v1/auth/register` | Регистрация (логин + пароль, привязка к Telegram ID) |
 | POST | `/api/v1/auth/login` | Вход |
 | GET | `/api/v1/auth/me` | Текущий пользователь |
@@ -96,9 +128,9 @@ frontend/
 | POST | `/api/v1/tarot/reading/draw` | Вытянуть карту (RNG на бэкенде) |
 | POST | `/api/v1/tarot/reading/interpret` | SSE стриминг толкования |
 | POST | `/api/v1/tarot/reading/next` | Следующий цикл |
-| POST | `/api/v1/tarot/reading/synthesis` | SSE стриминг итогового синтеза |
+| POST | `/api/v1/tarot/reading/synthesis` | Итоговый синтез: ответ LLM сначала сохраняется целиком, затем отдаётся по SSE чанками; сбой LLM — 502 |
 | GET | `/api/v1/tarot/reading/state` | Состояние расклада |
-| GET | `/api/v1/tarot/reading/history` | История раскладов |
+| GET | `/api/v1/tarot/reading/history` | История раскладов (по умолчанию последние 3 без подписки, 50 с подпиской) |
 
 ## Миграции
 
@@ -146,7 +178,8 @@ alembic check        # должно вывести "No new upgrade operations de
 `alembic check` сравнивает таблицы, колонки, типы, nullable, server default, индексы и
 unique-ограничения; он же выполняется в CI. В Docker любую из команд выше можно запустить так:
 `docker compose run --rm --no-deps backend alembic <команда>` (чтобы файл новой ревизии
-появился на хосте, добавьте `-v ./backend:/app`).
+появился на хосте, добавьте `-v ./backend:/app`; в Git Bash на Windows такую команду запускайте
+с префиксом `MSYS_NO_PATHCONV=1`, иначе путь тома будет переписан).
 
 ### База, созданная через create_all (нет таблицы alembic_version)
 
@@ -154,7 +187,21 @@ unique-ограничения; он же выполняется в CI. В Docker
 `alembic_version`, и `alembic upgrade head` упадёт с `relation "users" already exists`
 (ничего не изменив — DDL в PostgreSQL транзакционный). Базу нужно один раз «усыновить»:
 
-1. Сделайте бэкап: `docker compose exec -T db pg_dump -U user morlana_db > backup.sql`.
+1. Сделайте бэкап и положите его вне репозитория: в дампе данные пользователей, а `.gitignore`
+   его не закрывает. Дамп снимается внутри контейнера и копируется наружу файлом, минуя
+   перенаправление `>` (в PowerShell 5.1 оно портит дамп):
+
+   ```bash
+   docker compose exec -T db pg_dump -U user -Fc -f /tmp/morlana_db.dump morlana_db
+   docker compose exec -T db pg_restore -l /tmp/morlana_db.dump
+   docker compose cp db:/tmp/morlana_db.dump <папка вне репозитория>/morlana_db.dump
+   docker compose exec -T db rm -f /tmp/morlana_db.dump
+   ```
+
+   `pg_restore -l` должен перечислить `TABLE DATA` для `users`, `tarot_sessions`,
+   `reading_cycles` и `alembic_version`, иначе дамп неполный. В Git Bash ставьте перед каждой
+   командой `MSYS_NO_PATHCONV=1` (иначе `/tmp` превратится в путь Windows и `pg_dump` упадёт),
+   а папку назначения пишите в виде `C:/Users/<имя>/morlana-backups`.
 2. Посмотрите, что уже есть в базе (`\d users`, `\d tarot_sessions`, `\dt` в `psql`),
    и выберите **самую позднюю** ревизию, все объекты которой существуют:
 
@@ -190,8 +237,8 @@ server default, переименовывает `users_login_key` в `uq_users_lo
 
 > **Внимание:** `e3f4a5b6c7d8` безвозвратно удаляет таблицу `chat_histories` (легаси-чат,
 > эндпоинты `/api/v1/tarot/check-access`, `/draw`, `/predict/stream` и `/api/v1/sessions/close`
-> удалены). `downgrade` воссоздаёт её пустой. Если данные нужны — выгрузите их заранее:
-> `pg_dump -U user -t chat_histories morlana_db`.
+> удалены). `downgrade` воссоздаёт её пустой. Если данные нужны — выгрузите их заранее тем же
+> способом, что в шаге 1 выше, добавив к `pg_dump` ключ `-t chat_histories`.
 >
 > Если на уже мигрированной базе запустить сборку до `e3f4a5b6c7d8` (откат образа, рестарт
 > старого контейнера), её `create_all` молча создаст пустую `chat_histories` заново. Новому
@@ -218,7 +265,8 @@ docker compose run --rm --no-deps --user root -e DATABASE_URL=postgresql+psycopg
 Команда одинаково работает в PowerShell и в bash. `docker compose build backend` нужен, чтобы
 в образ попал текущий код; чтобы гонять тесты по рабочему дереву без пересборки, добавьте
 после `--user root` ключ `-v ./backend:/app` (ruff тогда оставит на хосте каталог
-`backend/.ruff_cache` — git его не видит, в образ он не попадает).
+`backend/.ruff_cache` — git его не видит, в образ он не попадает). Вариант с `-v` в Git Bash на
+Windows запускайте с префиксом `MSYS_NO_PATHCONV=1`, иначе путь тома будет переписан.
 
 ### Что важно знать
 
@@ -235,7 +283,8 @@ docker compose run --rm --no-deps --user root -e DATABASE_URL=postgresql+psycopg
 - Rate limit (slowapi) в тестах выключен, кроме одного теста с фикстурой `rate_limits_on`.
 - Фикстура `llm` отдаёт фиксированные чанки; `llm.fail = True` — LLM, падающая посреди стрима.
 
-Локально без Docker (нужны PostgreSQL и Redis на localhost):
+Локально без Docker (нужны PostgreSQL и Redis на localhost; там, где async SQLAlchemy на хосте не
+запускается, — только в Docker, см. выше):
 
 ```bash
 cd backend
@@ -249,7 +298,9 @@ pytest -q
 
 ### CI
 
-`.github/workflows/ci.yml` запускается на каждый `push` и `pull_request`:
+`.github/workflows/ci.yml` запускается на каждый `push` и `pull_request`. Оба job идут на
+`ubuntu-24.04`: метка закреплена, чтобы переезд `ubuntu-latest` на Ubuntu 26 (с 19 октября 2026)
+не поменял окружение незаметно.
 
 - **backend** — Python 3.12, сервисы `postgres:14` и `redis:7`: `ruff check`, `alembic upgrade head`
   на пустой базе, `alembic check` (модели совпадают с миграциями), `pytest`;

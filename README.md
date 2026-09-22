@@ -9,7 +9,8 @@ Telegram Mini App для персонализированных раскладо
 - **Frontend:** React 18 + TypeScript + Vite
 - **Backend:** FastAPI (Python 3.12)
 - **База данных:** PostgreSQL 14; состояние расклада — Redis 7
-- **ИИ:** OpenAI-совместимый провайдер MiMo через `AsyncOpenAI` (SDK `openai`). Модели задаются
+- **ИИ:** любой OpenAI-совместимый провайдер через `AsyncOpenAI` (SDK `openai`); поддержаны MiMo
+  и Yandex AI Studio, провайдер выбирается только переменными окружения `LLM_*`. Модели задаются
   переменными `LLM_FREE_MODEL` (толкования без подписки и итоговый синтез) и `LLM_PREMIUM_MODEL`
   (толкования при активной подписке)
 
@@ -65,8 +66,10 @@ Backend читает их из `.env` (`backend/config.py`); шаблон — `.
 | `REDIS_URL` | URL Redis: состояние незавершённого расклада | `redis://localhost:6379/0` |
 | `LLM_API_KEY` | Ключ OpenAI-совместимого провайдера. Пусто — вместо ответа LLM приходит заглушка «Модуль ИИ не настроен» | пусто |
 | `LLM_BASE_URL` | Базовый URL API провайдера. Пусто — адрес OpenAI по умолчанию | пусто |
-| `LLM_FREE_MODEL` | Модель толкований без подписки и итогового синтеза | `mimo-v2-flash` |
+| `LLM_FREE_MODEL` | Модель толкований без подписки и итогового синтеза. У Yandex — полный URI `gpt://<id каталога>/<модель>` | `mimo-v2-flash` |
 | `LLM_PREMIUM_MODEL` | Модель толкований при активной подписке (`subscription_ends_at` в будущем) | `mimo-v2-flash` |
+| `LLM_PROJECT` | Id каталога Yandex Cloud, уходит заголовком `OpenAI-Project`. Пусто — заголовка нет (для MiMo) | пусто |
+| `LLM_DATA_LOGGING` | `false` — заголовок `x-data-logging-enabled: false`: Yandex AI Studio не логирует запросы. Только `true` или `false`, пустое значение backend не примет | `true` |
 | `CORS_ORIGINS` | Разрешённые origins через запятую, **без пробелов** (строка делится по запятой без обрезки) | `http://localhost:3000` |
 | `DEV_MODE` | Только для локальной разработки: запрос без подписи Telegram считается одним фиксированным dev-аккаунтом; подпись, если она есть, проверяется всё равно. Backend не стартует, если при `DEV_MODE=true` в `CORS_ORIGINS` есть адрес не с `localhost`/`127.0.0.1` (например, ngrok) | `false` |
 | `INIT_DATA_MAX_AGE` | Сколько секунд действует initData (по `auth_date`) | `86400` |
@@ -76,7 +79,24 @@ Backend читает их из `.env` (`backend/config.py`); шаблон — `.
 | `SKIP_ONBOARDING` | Не используется: объявлена в `config.py`, код её не читает | `true` |
 
 Колонка «По умолчанию» — значения из `config.py`. В `.env.example` для моделей стоят другие имена:
-`mimo-v2.5` и `mimo-v2.5-pro`.
+`mimo-v2.5` и `mimo-v2.5-pro`. Оба варианта MiMo устарели: `mimo-v2-flash` снят 30.06.2026,
+`mimo-v2.5` и `mimo-v2.5-pro` перестают работать 21.10.2026 (преемники — `mimo-v2.6-flash` и
+`mimo-v2.6-pro`).
+
+Два поддерживаемых провайдера различаются только переменными `LLM_*`:
+
+- **MiMo** — `LLM_API_KEY`, `LLM_BASE_URL`, имена моделей MiMo; `LLM_PROJECT` пустой,
+  `LLM_DATA_LOGGING=true`.
+- **Yandex AI Studio** — `LLM_BASE_URL=https://ai.api.cloud.yandex.net/v1`, API-ключ сервисного
+  аккаунта с ролью `ai.languageModels.user`, `LLM_PROJECT=<id каталога>`,
+  `LLM_DATA_LOGGING=false`, модели `gpt://<id каталога>/aliceai-llm-flash` и
+  `gpt://<id каталога>/aliceai-llm`. Готовый блок с заглушками — в конце раздела LLM в
+  `.env.example`. Ошибки у Yandex другие: вместо 402 при пустом балансе ждите 401/403 (ключ, роль,
+  платёжный аккаунт) и 429 (квоты); модерация по умолчанию может вернуть текст-отказ вместо
+  толкования, и он сохранится как обычный ответ.
+
+Репозиторий публичный: настоящие ключи держите только в `.env` (он в `.gitignore`) или в файле вне
+репозитория, в `.env.example` — только заглушки.
 
 Фронтенд: `VITE_API_URL` (`frontend/.env.example`) — адрес API для `npm run dev`; в сборке для
 nginx он пустой, запросы идут на тот же origin. Build-аргумент `VITE_SKIP_ONBOARDING`
@@ -249,7 +269,9 @@ server default, переименовывает `users_login_key` в `uq_users_lo
 
 Тесты бэкенда лежат в `backend/tests` и ходят в приложение по HTTP (httpx поверх ASGI, с
 настоящим lifespan), в настоящий PostgreSQL и настоящий Redis. Заглушка одна — LLM
-(`routes.reading.stream_prediction`), сеть и ключ API не нужны.
+(`routes.reading.stream_prediction`), сеть и ключ API не нужны. Клиент провайдера
+(`test_llm_client.py`) проверяется настоящим `stream_prediction`, которому вместо провайдера
+отвечает `httpx.MockTransport`.
 
 ### Запуск в Docker
 
@@ -282,6 +304,9 @@ Windows запускайте с префиксом `MSYS_NO_PATHCONV=1`, ина�
   initData тестовым токеном `123456:TEST` тем же HMAC, что и Telegram.
 - Rate limit (slowapi) в тестах выключен, кроме одного теста с фикстурой `rate_limits_on`.
 - Фикстура `llm` отдаёт фиксированные чанки; `llm.fail = True` — LLM, падающая посреди стрима.
+- `test_llm_client.py` собирает настройки только из своих значений: переменные `LLM_*` и
+  `OPENAI_*` (в том числе `OPENAI_PROJECT_ID`, который SDK иначе подставил бы в `OpenAI-Project`)
+  на время теста удаляются из окружения.
 
 Локально без Docker (нужны PostgreSQL и Redis на localhost; там, где async SQLAlchemy на хосте не
 запускается, — только в Docker, см. выше):

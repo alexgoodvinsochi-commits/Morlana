@@ -41,11 +41,20 @@ SYNTHESIS_PROMPT = """Синтезируй несколько раскладов
 
 Максимум 400 слов. Без повторения отдельных раскладов."""
 
-client = (
-    AsyncOpenAI(api_key=settings.LLM_API_KEY, base_url=settings.LLM_BASE_URL or None)
-    if settings.LLM_API_KEY
-    else None
-)
+
+def build_client() -> AsyncOpenAI | None:
+    """The OpenAI-compatible provider client from settings; None without LLM_API_KEY."""
+    if not settings.LLM_API_KEY:
+        return None
+    return AsyncOpenAI(
+        api_key=settings.LLM_API_KEY,
+        base_url=settings.LLM_BASE_URL or None,
+        project=settings.LLM_PROJECT or None,
+        default_headers=None if settings.LLM_DATA_LOGGING else {"x-data-logging-enabled": "false"},
+    )
+
+
+client = build_client()
 
 MAJOR_ARCANA = [
     "Шут", "Маг", "Верховная Жрица", "Императрица", "Император",
@@ -69,10 +78,24 @@ def get_card_name(card_id: int) -> str:
     return f"{MINOR_RANKS[rank_index]} {SUITS[suit_index]}"
 
 
+# Typographic characters the whitelist below would drop, gluing words together
+# ("что\u2011то" -> "чтото", "3\u202fдня" -> "3дня"): mapped to their plain equivalents first.
+_TYPOGRAPHIC = str.maketrans({
+    "\u2010": "-",  # hyphen
+    "\u2011": "-",  # non-breaking hyphen
+    "\u2007": " ",  # figure space
+    "\u2009": " ",  # thin space
+    "\u200a": " ",  # hair space
+    "\u202f": " ",  # narrow no-break space
+    "\u2026": "...",  # ellipsis
+})
+
+
 def clean_llm_output(text: str) -> str:
     text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
     text = re.sub(r'[*_`]', '', text)
     text = re.sub(r'#{1,6}\s*', '', text)
+    text = text.translate(_TYPOGRAPHIC)
     text = re.sub(r'[^\u0400-\u04FF\u0000-\u007F\u00A0 \t\n\r.,!?;:\-\u2012\u2013\u2014()\"\'«»/]', '', text)
     text = re.sub(r'([a-zA-Z])([\u0400-\u04FF])', r'\1 \2', text)
     text = re.sub(r'([\u0400-\u04FF])([a-zA-Z])', r'\1 \2', text)

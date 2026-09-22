@@ -33,7 +33,8 @@ https://claude.ai/artifact/LqFp3r5WRWLZ11BCyXCj7M
   расклады (1 карта, до 6 циклов), синтез, история. Архивные расклады не удаляются; экран истории
   показывает последние 3 без подписки и 50 с подпиской (`HISTORY_LIMIT_FREE`,
   `HISTORY_LIMIT_PREMIUM`)
-- Backend: FastAPI + PostgreSQL + Redis, LLM — провайдер MiMo через OpenAI-совместимый API
+- Backend: FastAPI + PostgreSQL + Redis, LLM — OpenAI-совместимый провайдер (MiMo или Yandex AI
+  Studio), выбирается переменными `LLM_*`
 - Frontend: React 18 + TypeScript + Vite
 
 ---

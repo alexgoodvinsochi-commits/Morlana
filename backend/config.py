@@ -6,6 +6,10 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+psycopg://user:pass@localhost:5432/morlana_db"
     LLM_API_KEY: str = ""
     LLM_BASE_URL: str = ""
+    # Yandex AI Studio folder id, sent as the OpenAI-Project header. Empty: no header.
+    LLM_PROJECT: str = ""
+    # False sends `x-data-logging-enabled: false` (Yandex AI Studio stops keeping request logs).
+    LLM_DATA_LOGGING: bool = True
     PAYMENT_PROVIDER_TOKEN: str = ""
     CORS_ORIGINS: str = "http://localhost:3000"
     LLM_FREE_MODEL: str = "mimo-v2-flash"

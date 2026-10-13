@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
+import { apiGet } from '../api/client';
+import type { ReadingStateResponse } from '../api/client';
 import { useReadingSession } from '../hooks/useReadingSession';
 import '../styles/reading.css';
 
@@ -10,8 +12,41 @@ interface Props {
   startFresh?: boolean;
 }
 
-/* Только представление: весь HTTP, возобновление и опрос живут в
-   useReadingSession, здесь остаётся вёрстка и черновик вопроса. */
+/* Ответ GET /api/v1/tarot/decks: картинку рубашки знает только сервер. */
+interface DeckInfo {
+  id: string;
+  name: string;
+  back_image: string;
+}
+
+/* Рубашки колод за сеанс не меняются: спрашиваем их один раз на всё
+   приложение, повторные экраны берут готовый ответ. */
+let deckBacksRequest: Promise<Record<string, string>> | null = null;
+
+function loadDeckBacks(initData: string): Promise<Record<string, string>> {
+  if (!deckBacksRequest) {
+    deckBacksRequest = apiGet<DeckInfo[]>('/api/v1/tarot/decks', initData)
+      .then((decks) => Object.fromEntries(decks.map((deck) => [deck.id, deck.back_image])))
+      .catch((err) => {
+        /* Неудачу не кешируем: следующий расклад попробует ещё раз. */
+        deckBacksRequest = null;
+        throw err;
+      });
+  }
+  return deckBacksRequest;
+}
+
+/* Номер цикла, которому принадлежат лежащие на экране карты. После толкования
+   cycle_count уже вырос, а карта осталась той же, поэтому «до толкования» и
+   «после» должны давать одно число: иначе появление карты играло бы дважды. */
+function cardCycleNumber(reading: ReadingStateResponse): number {
+  const interpreted = reading.state === 'READY' || reading.state === 'COMPLETED';
+  return interpreted ? reading.cycle_count : reading.cycle_count + 1;
+}
+
+/* Почти только представление: весь HTTP расклада, возобновление и опрос живут
+   в useReadingSession, здесь остаётся вёрстка, черновик вопроса и рубашка
+   колоды — она нужна одной лишь анимации появления карты. */
 export default function ReadingScreen({ initData, onExit, onHistory, startFresh = false }: Props) {
   const {
     reading,
@@ -30,8 +65,14 @@ export default function ReadingScreen({ initData, onExit, onHistory, startFresh 
   } = useReadingSession(initData, startFresh);
 
   const [question, setQuestion] = useState('');
+  /* Рубашка колоды этого расклада: с ней карта появляется рубашкой вверх и
+     переворачивается, без неё — сразу лицом, как раньше. */
+  const [deckBack, setDeckBack] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const interpretationRef = useRef<HTMLDivElement>(null);
+  /* Выкладка, которая уже показалась лицом (рубашка пришла позже): задним
+     числом её не переворачиваем. */
+  const shownFaceRef = useRef('');
 
   /* Читатель сам внизу блока толкования — только тогда идём за текстом. */
   const atBottomRef = useRef(false);
@@ -63,6 +104,54 @@ export default function ReadingScreen({ initData, onExit, onHistory, startFresh 
       scroll.scrollTop = scroll.scrollHeight;
     }
   }, [streamText, synthesisText]);
+
+  const deckId = reading?.deck_id ?? '';
+  /* Один ключ на всю выкладку: меняется только с новыми картами, поэтому
+     появление играется у каждой новой карты и ни разу внутри цикла. */
+  const drawKey = reading && reading.current_cards.length > 0
+    ? `${cardCycleNumber(reading)}-${reading.current_cards.map((card) => card.card_id).join('-')}`
+    : '';
+
+  useEffect(() => {
+    if (!initData || !deckId) return;
+    let cancelled = false;
+
+    loadDeckBacks(initData)
+      .then((backs) => {
+        const back = backs[deckId] ?? '';
+        if (cancelled) return;
+        if (!back) {
+          setDeckBack('');
+          return;
+        }
+        /* Рубашка идёт в дело только когда картинка уже в кэше браузера: иначе
+           вместо неё проявилась бы пустая рамка, а битый файл крутил бы пустоту.
+           Не загрузилась — анимации просто нет, карта показывается лицом. */
+        const preload = new Image();
+        preload.onload = () => {
+          if (!cancelled) setDeckBack(back);
+        };
+        preload.onerror = () => {
+          if (!cancelled) setDeckBack('');
+        };
+        preload.src = back;
+      })
+      .catch(() => {
+        /* Анимация необязательна: расклад из-за неё не встаёт. */
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initData, deckId]);
+
+  useEffect(() => {
+    if (drawKey && !deckBack) {
+      shownFaceRef.current = drawKey;
+    }
+  }, [drawKey, deckBack]);
+
+  const revealCard = !!drawKey && !!deckBack && shownFaceRef.current !== drawKey;
 
   const handleInterpretationScroll = () => {
     const scroll = interpretationRef.current;
@@ -110,7 +199,7 @@ export default function ReadingScreen({ initData, onExit, onHistory, startFresh 
   const cards = reading.current_cards;
 
   return (
-    <div className="reading-screen">
+    <div className={reading.state === 'COMPLETED' ? 'reading-screen reading-screen--completed' : 'reading-screen'}>
       {/* Card Container - 3/4 screen */}
       <div className="card-container">
         {cards.length > 0 ? (
@@ -118,8 +207,18 @@ export default function ReadingScreen({ initData, onExit, onHistory, startFresh 
             {cards.map((card) => {
               const name = card.reversed ? `${card.name} (перевёрнута)` : card.name;
               return (
-                <div className="current-card" key={`${card.position}-${card.card_id}`}>
-                  <img src={card.image} alt={name} className="current-card-image" />
+                <div
+                  className={revealCard ? 'current-card current-card--reveal' : 'current-card'}
+                  key={`${drawKey}-${card.position}`}
+                >
+                  <div className="card-flip">
+                    <div className="card-flip-inner">
+                      {revealCard && (
+                        <img src={deckBack} alt="" className="current-card-image card-flip-back" />
+                      )}
+                      <img src={card.image} alt={name} className="current-card-image card-flip-front" />
+                    </div>
+                  </div>
                   <p className="current-card-name">{name}</p>
                 </div>
               );
@@ -132,14 +231,7 @@ export default function ReadingScreen({ initData, onExit, onHistory, startFresh 
         )}
       </div>
 
-      {/* Dots Indicator */}
-      {cards.length > 0 && (
-        <div className="dots-indicator">
-          <div className="dot active" />
-          <div className="dot" />
-          <div className="dot" />
-        </div>
-      )}
+      {/* Индикатор карт вернётся вместе с раскладами из нескольких карт. */}
 
       {/* Scrollable Interpretation */}
       {(streamText || synthesisText) && (
@@ -237,7 +329,12 @@ export default function ReadingScreen({ initData, onExit, onHistory, startFresh 
 
         {reading.state === 'COMPLETED' && (
           <div className="reading-complete-actions">
-            <button onClick={handleNewReading} disabled={loading} aria-busy={loading}>
+            <button
+              onClick={handleNewReading}
+              disabled={loading}
+              aria-busy={loading}
+              className="restart-btn"
+            >
               Новый расклад
             </button>
             <button onClick={onHistory}>Мои расклады</button>

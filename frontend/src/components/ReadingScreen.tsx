@@ -33,16 +33,38 @@ export default function ReadingScreen({ initData, onExit, onHistory, startFresh 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const interpretationRef = useRef<HTMLDivElement>(null);
 
+  /* Читатель сам внизу блока толкования — только тогда идём за текстом. */
+  const atBottomRef = useRef(false);
+  /* Начался новый текст: показываем его с первой строки, а не с конца. */
+  const streamingRef = useRef(false);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [reading, streamText, synthesisText]);
+  }, [reading?.state]);
 
   useEffect(() => {
     const scroll = interpretationRef.current;
-    if (scroll) {
+    if (!scroll) return;
+    if (!streamText && !synthesisText) {
+      streamingRef.current = false;
+      return;
+    }
+    if (!streamingRef.current) {
+      streamingRef.current = true;
+      atBottomRef.current = false;
+      scroll.scrollTop = 0;
+      return;
+    }
+    if (atBottomRef.current) {
       scroll.scrollTop = scroll.scrollHeight;
     }
   }, [streamText, synthesisText]);
+
+  const handleInterpretationScroll = () => {
+    const scroll = interpretationRef.current;
+    if (!scroll) return;
+    atBottomRef.current = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 24;
+  };
 
   const handleAsk = async () => {
     if (await ask(question)) {
@@ -102,7 +124,7 @@ export default function ReadingScreen({ initData, onExit, onHistory, startFresh 
         ) : reading.current_question ? (
           <p className="current-question">Ваш вопрос: {reading.current_question}</p>
         ) : (
-          <h2>Цикл {reading.cycle_count + 1}/{reading.max_cycles}</h2>
+          <h2>Вопрос {reading.cycle_count + 1} из {reading.max_cycles}</h2>
         )}
       </div>
 
@@ -119,10 +141,14 @@ export default function ReadingScreen({ initData, onExit, onHistory, startFresh 
       {(streamText || synthesisText) && (
         <div className="interpretation-container">
           <div className="interpretation-gradient-top" />
-          <div className="interpretation-scroll" ref={interpretationRef}>
+          <div
+            className="interpretation-scroll"
+            ref={interpretationRef}
+            onScroll={handleInterpretationScroll}
+          >
             {synthesisText && (
               <div className="synthesis-text">
-                <h3>Итоговая синтезация</h3>
+                <h3>Итог расклада</h3>
                 <p>{synthesisText}</p>
               </div>
             )}
@@ -166,7 +192,7 @@ export default function ReadingScreen({ initData, onExit, onHistory, startFresh 
 
         {reading.state === 'CARDS_DRAWN' && (
           <button onClick={interpret} disabled={loading} aria-busy={loading}>
-            {loading ? <><span className="spinner" /> Толкую...</> : 'Получить толкование'}
+            {loading ? <><span className="spinner" /> Раскладываю карты...</> : 'Получить толкование'}
           </button>
         )}
 
@@ -175,12 +201,12 @@ export default function ReadingScreen({ initData, onExit, onHistory, startFresh 
             <div className="interpret-retry">
               {!error && <p className="reading-status">Толкование не пришло.</p>}
               <button onClick={interpret} disabled={loading} aria-busy={loading}>
-                {loading ? <><span className="spinner" /> Толкую...</> : 'Повторить толкование'}
+                {loading ? <><span className="spinner" /> Раскладываю карты...</> : 'Повторить толкование'}
               </button>
             </div>
           ) : (
             <div className="reading-status">
-              <span className="spinner" /> Толкование загружается...
+              <span className="spinner" /> Раскладываю карты...
             </div>
           )
         )}
@@ -199,7 +225,7 @@ export default function ReadingScreen({ initData, onExit, onHistory, startFresh 
                 aria-busy={loading}
                 className="synthesis-btn"
               >
-                {loading ? <><span className="spinner" /> Синтезирую...</> : 'Синтезировать расклад'}
+                {loading ? <><span className="spinner" /> Подвожу итог...</> : 'Подвести итог'}
               </button>
             )}
           </div>
@@ -222,7 +248,7 @@ export default function ReadingScreen({ initData, onExit, onHistory, startFresh 
           <div className="progress-fill" style={{ width: `${progress}%` }} />
         </div>
         <p className="progress-text">
-          Цикл {reading.cycle_count} из {reading.max_cycles}
+          Вопрос {reading.cycle_count} из {reading.max_cycles}
         </p>
       </div>
 

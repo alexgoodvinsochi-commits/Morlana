@@ -98,7 +98,7 @@ export default function ReadingHistory({ initData, onBack }: Props) {
                 {reading.cycles.map((cycle) => (
                   <div key={cycle.cycle_number} className="history-cycle">
                     <div className="history-cycle-header">
-                      <span className="cycle-number">Цикл {cycle.cycle_number}</span>
+                      <span className="cycle-number">Вопрос {cycle.cycle_number}</span>
                       {cycle.cards.map((card) => (
                         <img
                           key={`${card.position}-${card.card_id}`}

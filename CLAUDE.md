@@ -167,7 +167,7 @@ docker compose exec -T db rm -f /tmp/$name
 ### 10. Отгрузить изменение
 
 - Перед коммитом: задача 3 целиком. `alembic check` отдельно запускать не нужно: его выполняет `test_infra.py` на `morlana_test`, а CI — ещё и на пустой базе. CI (`.github/workflows/ci.yml`) идёт на каждый push и pull request: ruff, миграции, `alembic check`, pytest, `tsc` и сборка фронтенда. После push проверь, что прогон зелёный: `gh run list --limit 1`.
-- Коммиты — английские Conventional Commits в нижнем регистре со scope по желанию (`feat:`, `fix(auth):`, `chore(security):`); у крупных — тело списком по областям. Работа идёт в ветках `feature/*`, основная — `main`; `git push` только после разрешения.
+- Коммиты — английские Conventional Commits в нижнем регистре со scope по желанию (`feat:`, `fix(auth):`, `chore(security):`); у крупных — тело списком по областям. Строку `Co-Authored-By` не добавлять: владелец попросил без неё (13.10.2026). Работа идёт в ветках `feature/*`, основная — `main`; `git push` только после разрешения.
 - Предупреждения git `LF will be replaced by CRLF` — шум. BOM в начале `start.ps1` оставлен намеренно.
 
 ### 11. Сменить провайдера LLM

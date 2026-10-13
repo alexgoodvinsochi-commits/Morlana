@@ -81,7 +81,7 @@ function saveState(state: AppState) {
 }
 
 function App() {
-  const { initData } = useTelegram();
+  const { initData, photoUrl } = useTelegram();
   const [state, setState] = useState<AppState>(() => {
     const saved = loadState();
     return saved || { screen: 'login', userLogin: null, userName: null };
@@ -184,6 +184,7 @@ function App() {
         {state.screen === 'dashboard' && state.userLogin && (
           <UserDashboard
             initData={initData}
+            photoUrl={photoUrl}
             userLogin={state.userLogin}
             onLogout={handleLogout}
             onNewReading={handleNewReading}

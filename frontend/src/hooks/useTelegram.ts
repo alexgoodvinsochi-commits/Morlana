@@ -1,7 +1,16 @@
 import { useEffect, useState } from 'react';
 
+interface TelegramUser {
+  id: number;
+  first_name?: string;
+  /* Фото профиля: приходит всем мини-аппам с Bot API 8.0, но только если это
+     разрешают настройки приватности пользователя. Поэтому поле необязательное. */
+  photo_url?: string;
+}
+
 interface TelegramWebApp {
   initData: string;
+  initDataUnsafe?: { user?: TelegramUser };
   version: string;
   ready: () => void;
   expand: () => void;
@@ -61,5 +70,7 @@ export function useTelegram() {
   return {
     webApp,
     initData: webApp?.initData || '',
+    /* Ссылка на фото не сохраняется ни в базу, ни на диск: берётся при каждом запуске. */
+    photoUrl: webApp?.initDataUnsafe?.user?.photo_url || '',
   };
 }

@@ -12,6 +12,8 @@ interface UserData {
 interface Props {
   initData: string;
   userLogin: string;
+  /* Фото профиля Telegram; пустая строка — показываем букву. */
+  photoUrl?: string;
   onLogout: () => void;
   onNewReading: () => void;
   onOpenHistory: () => void;
@@ -32,6 +34,7 @@ function errorMessage(err: unknown): string {
 export default function UserDashboard({
   initData,
   userLogin,
+  photoUrl = '',
   onLogout,
   onNewReading,
   onOpenHistory,
@@ -40,6 +43,7 @@ export default function UserDashboard({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
+  const [photoFailed, setPhotoFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -103,7 +107,11 @@ export default function UserDashboard({
     <div className="dashboard">
       <div className="dashboard-header">
         <div className="user-avatar">
-          {user.real_name?.charAt(0).toUpperCase() || '?'}
+          {photoUrl && !photoFailed ? (
+            <img src={photoUrl} alt="" onError={() => setPhotoFailed(true)} />
+          ) : (
+            user.real_name?.charAt(0).toUpperCase() || '?'
+          )}
         </div>
         <h2>{user.real_name}</h2>
         <p className="user-login">@{user.login}</p>

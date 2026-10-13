@@ -9,6 +9,7 @@
 
 /* === Card Container === */
 .card-container {
+  transition: height 0.45s ease, padding 0.45s ease;
   position: relative;
   width: 100%;
   height: 75vh;
@@ -38,6 +39,7 @@
 }
 
 .interpretation-scroll {
+  transition: max-height 0.45s ease;
   max-height: 40vh;
   overflow-y: auto;
   padding: 20px;
@@ -174,6 +176,7 @@
 }
 
 .current-card-image {
+  transition: max-height 0.45s ease;
   width: 100%;
   max-width: 280px;
   height: auto;
@@ -192,6 +195,8 @@
 /* Размер карты задаёт лицо: рубашка лежит поверх него тем же боксом,
    поэтому вёрстка не прыгает ни до переворота, ни после. */
 .card-flip-inner {
+  /* Переход в финальное состояние: карта уменьшается, текст растёт — плавно. */
+  transition: max-width 0.45s ease;
   position: relative;
   width: 280px;
   max-width: 100%;
@@ -257,6 +262,17 @@
 
   .current-card--reveal .card-flip-back {
     display: none;
+  }
+
+  .card-container,
+  .card-flip-inner,
+  .current-card-image,
+  .interpretation-scroll {
+    transition: none;
+  }
+
+  .reading-screen--completed .reading-complete-actions {
+    animation: none;
   }
 }
 
@@ -486,6 +502,12 @@
 .reading-screen--completed .reading-complete-actions {
   flex-direction: row;
   flex-wrap: wrap;
+  animation: completedActionsIn 0.45s ease-out backwards;
+}
+
+@keyframes completedActionsIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* Кнопки одной ширины; на 320px три ещё влезают в строку, на более узком

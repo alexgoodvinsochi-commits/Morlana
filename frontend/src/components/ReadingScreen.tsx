@@ -35,22 +35,26 @@ export default function ReadingScreen({ initData, onExit, onHistory, startFresh 
 
   /* Читатель сам внизу блока толкования — только тогда идём за текстом. */
   const atBottomRef = useRef(false);
-  /* Начался новый текст: показываем его с первой строки, а не с конца. */
-  const streamingRef = useRef(false);
+  /* Предыдущие значения текстов: по переходу «пусто -> текст» видно, что
+     начался новый ответ, и его надо показать с первой строки. Храним их, а не
+     флаг «идёт поток»: между вопросами блок толкования исчезает со страницы,
+     и флаг, завязанный на этот блок, не успевал сброситься. */
+  const prevStreamRef = useRef('');
+  const prevSynthesisRef = useRef('');
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [reading?.state]);
 
   useEffect(() => {
+    const startedInterpretation = !!streamText && !prevStreamRef.current;
+    const startedSynthesis = !!synthesisText && !prevSynthesisRef.current;
+    prevStreamRef.current = streamText;
+    prevSynthesisRef.current = synthesisText;
+
     const scroll = interpretationRef.current;
     if (!scroll) return;
-    if (!streamText && !synthesisText) {
-      streamingRef.current = false;
-      return;
-    }
-    if (!streamingRef.current) {
-      streamingRef.current = true;
+    if (startedInterpretation || startedSynthesis) {
       atBottomRef.current = false;
       scroll.scrollTop = 0;
       return;

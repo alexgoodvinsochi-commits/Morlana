@@ -19,7 +19,9 @@ body {
 .app {
   max-width: 480px;
   margin: 0 auto;
-  padding: 20px;
+  /* Безопасные зоны: вырез сверху и полоса жестов снизу. Фон при этом доходит
+     до краёв экрана, поэтому полос другого цвета не видно. */
+  padding: calc(20px + env(safe-area-inset-top, 0px)) 20px calc(20px + env(safe-area-inset-bottom, 0px));
   min-height: 100vh;
   background: linear-gradient(180deg, rgba(10, 6, 18, 0.7) 0%, rgba(10, 6, 18, 0.85) 100%);
 }

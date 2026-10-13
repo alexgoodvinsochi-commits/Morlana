@@ -2,7 +2,8 @@
 .reading-screen {
   display: flex;
   flex-direction: column;
-  min-height: calc(100vh - 40px);
+  /* 40px — вертикальные отступы .app; к ним добавились безопасные зоны. */
+  min-height: calc(100vh - 40px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
   overflow: hidden;
 }
 

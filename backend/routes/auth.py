@@ -3,7 +3,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, StringConstraints
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
@@ -52,6 +52,11 @@ class AuthResponse(BaseModel):
     login: str
 
 
+def _normalise_login(login: str) -> str:
+    """Logins are case-insensitive: stored and compared in lower case."""
+    return login.strip().lower()
+
+
 def _require_telegram_user(init_data: str) -> dict:
     user_data = validate_telegram_init_data(init_data)
     if not user_data:
@@ -78,6 +83,7 @@ async def register(
 ):
     tg_user = _require_telegram_user(initData)
     telegram_id = tg_user["id"]
+    login = _normalise_login(req.login)
 
     result = await db.execute(select(User).where(User.telegram_id == telegram_id))
     user = result.scalar_one_or_none()
@@ -85,7 +91,9 @@ async def register(
         raise HTTPException(status_code=409, detail="Account already registered")
 
     taken = await db.execute(
-        select(User.telegram_id).where(User.login == req.login, User.telegram_id != telegram_id)
+        select(User.telegram_id).where(
+            func.lower(User.login) == login, User.telegram_id != telegram_id
+        )
     )
     if taken.first() is not None:
         raise HTTPException(status_code=409, detail="Login already taken")
@@ -96,7 +104,7 @@ async def register(
         # Legacy row without a password: bind the credentials to it.
         user.real_name = req.real_name
         user.gender = req.gender
-        user.login = req.login
+        user.login = login
         user.password_hash = password_hash
     else:
         user = User(
@@ -104,7 +112,7 @@ async def register(
             username=tg_user.get("username"),
             real_name=req.real_name,
             gender=req.gender,
-            login=req.login,
+            login=login,
             password_hash=password_hash,
             free_requests_left=3,
         )
@@ -130,7 +138,9 @@ async def login(
 ):
     tg_user = _require_telegram_user(initData)
 
-    result = await db.execute(select(User).where(User.login == req.login))
+    result = await db.execute(
+        select(User).where(func.lower(User.login) == _normalise_login(req.login))
+    )
     user = result.scalar_one_or_none()
     # The login is a second factor of this Telegram account only.
     if not user or not user.password_hash or user.telegram_id != tg_user["id"]:

@@ -32,6 +32,7 @@ function errorMessage(err: unknown): string {
 export default function LoginScreen({ initData, onLogin, onRegister }: Props) {
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -79,12 +80,22 @@ export default function LoginScreen({ initData, onLogin, onRegister }: Props) {
 
         <div className="field">
           <label>Пароль</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Ваш пароль"
-          />
+          <div className="password-row">
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Ваш пароль"
+            />
+            <button
+              type="button"
+              className="password-toggle"
+              onClick={() => setShowPassword((v) => !v)}
+              aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
+            >
+              {showPassword ? '🙈' : '👁'}
+            </button>
+          </div>
         </div>
 
         {error && <p className="error">{error}</p>}

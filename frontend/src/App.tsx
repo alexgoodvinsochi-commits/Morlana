@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { apiGet, ApiError } from './api/client';
 import { useTelegram } from './hooks/useTelegram';
 import Onboarding from './components/Onboarding';
 import LoginScreen from './components/LoginScreen';
@@ -16,6 +17,31 @@ interface AppState {
 }
 
 const STORAGE_KEY = 'morlana_state';
+/* Выставляется кнопкой «Выйти»: пока флаг стоит, автоматический вход не срабатывает
+   и человек может войти под другим аккаунтом. Снимается успешным входом. */
+const SIGNED_OUT_KEY = 'morlana_signed_out';
+
+interface MeResponse {
+  login: string;
+  real_name: string;
+}
+
+function isSignedOut(): boolean {
+  try {
+    return localStorage.getItem(SIGNED_OUT_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function setSignedOut(value: boolean) {
+  try {
+    if (value) localStorage.setItem(SIGNED_OUT_KEY, '1');
+    else localStorage.removeItem(SIGNED_OUT_KEY);
+  } catch {
+    // ignore
+  }
+}
 
 const VALID_SCREENS: Screen[] = ['login', 'onboarding', 'dashboard', 'reading', 'history'];
 
@@ -68,7 +94,37 @@ function App() {
     saveState(state);
   }, [state]);
 
+  /* Личность на сервере подтверждается подписью Telegram, поэтому логин и пароль
+     при каждом запуске не нужны: спрашиваем сервер, есть ли аккаунт у этого
+     Telegram-пользователя, и пускаем сразу. initData на первом рендере пуст. */
+  useEffect(() => {
+    if (!initData || state.userLogin || isSignedOut()) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const me = await apiGet<MeResponse>('/api/v1/auth/me', initData);
+        if (cancelled) return;
+        setState((prev) => ({
+          screen: AUTH_SCREENS.includes(prev.screen) ? prev.screen : 'dashboard',
+          userLogin: me.login,
+          userName: me.real_name,
+        }));
+      } catch (err) {
+        if (cancelled) return;
+        /* 404 — у этого Telegram-аккаунта ещё нет учётной записи: регистрация.
+           Остальные ошибки (нет сети, не Telegram) оставляют экран входа. */
+        if (err instanceof ApiError && err.status === 404) {
+          setState((prev) => (prev.screen === 'login' ? { ...prev, screen: 'onboarding' } : prev));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [initData, state.userLogin]);
+
   const handleLogin = (data: { login: string; real_name: string }) => {
+    setSignedOut(false);
     setState({ screen: 'dashboard', userLogin: data.login, userName: data.real_name });
   };
 
@@ -77,11 +133,13 @@ function App() {
   };
 
   const handleOnboardingComplete = (data: { login: string; real_name: string }) => {
+    setSignedOut(false);
     setState({ screen: 'dashboard', userLogin: data.login, userName: data.real_name });
   };
 
   const handleLogout = () => {
     localStorage.removeItem(STORAGE_KEY);
+    setSignedOut(true);
     setState({ screen: 'login', userLogin: null, userName: null });
   };
 

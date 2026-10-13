@@ -131,6 +131,36 @@
   color: #6b5d4a;
 }
 
+/* Поле пароля с кнопкой «показать» */
+.password-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.password-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.password-toggle {
+  flex: 0 0 48px;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 1px solid rgba(196, 162, 101, 0.3);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  color: #c4a265;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.password-toggle:hover {
+  border-color: #c4a265;
+}
+
 .location-row {
   display: flex;
   gap: 8px;

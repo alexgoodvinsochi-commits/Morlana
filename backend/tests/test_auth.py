@@ -178,6 +178,42 @@ async def test_login_with_correct_password(client):
     assert resp.json() == {"telegram_id": ALICE, "real_name": "Алиса", "gender": "female", "login": "alice"}
 
 
+@pytest.mark.parametrize("typed", ["Alice", "ALICE", "aLiCe", " alice "])
+async def test_login_ignores_the_case_of_the_login(client, typed):
+    headers = await register(client, ALICE, "alice")
+
+    resp = await client.post(
+        f"{AUTH}/login", json={"login": typed, "password": DEFAULT_PASSWORD}, headers=headers
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["login"] == "alice"
+
+
+async def test_registration_stores_the_login_in_lower_case(client):
+    headers = auth_headers(ALICE)
+
+    resp = await client.post(
+        f"{AUTH}/register", json=register_payload("Alice.Smith"), headers=headers
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["login"] == "alice.smith"
+    stored = await db_scalar("SELECT login FROM users WHERE telegram_id = :tg", tg=ALICE)
+    assert stored == "alice.smith"
+
+
+async def test_a_login_is_taken_in_any_case(client):
+    await register(client, ALICE, "alice")
+
+    resp = await client.post(
+        f"{AUTH}/register", json=register_payload("ALICE"), headers=auth_headers(BOB)
+    )
+
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "Login already taken"
+
+
 async def test_login_with_wrong_password_is_401(client):
     headers = await register(client, ALICE, "alice")
 

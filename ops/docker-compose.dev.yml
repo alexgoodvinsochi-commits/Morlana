@@ -1,0 +1,37 @@
+# Development contour. Runs beside production on the same host as a separate
+# compose project, which is where the isolation comes from: its own containers
+# and, most importantly, its own pgdata volume. Production's database is not
+# visible from here, so the names inside (morlana_db, user) can stay as they are.
+#
+#   docker compose -p morlana-dev -f docker-compose.yml -f ops/docker-compose.dev.yml up -d --build
+#
+# One worker, unlike production: this contour serves one tester, and the memory
+# is better left to whichever build happens to be running.
+
+services:
+  db:
+    ports: !override []
+    restart: unless-stopped
+    logging: &json_logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    ports: !override []
+    restart: unless-stopped
+    logging: *json_logging
+
+  migrate:
+    logging: *json_logging
+
+  backend:
+    ports: !override ["127.0.0.1:8001:8000"]
+    restart: unless-stopped
+    logging: *json_logging
+
+  frontend:
+    ports: !override ["127.0.0.1:3001:80"]
+    restart: unless-stopped
+    logging: *json_logging

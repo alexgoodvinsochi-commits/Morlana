@@ -23,10 +23,16 @@ services:
     restart: unless-stopped
     logging: *json_logging
 
+  # The base file names the backend image explicitly, and -p does not prefix an
+  # explicit name. Without these two lines a dev build re-tags morlana-backend,
+  # the image production's containers are created from: the next time production
+  # recreates them, it would run whatever branch is on dev, migrations included.
   migrate:
+    image: morlana-dev-backend
     logging: *json_logging
 
   backend:
+    image: morlana-dev-backend
     ports: !override ["127.0.0.1:8001:8000"]
     restart: unless-stopped
     logging: *json_logging

@@ -29,7 +29,11 @@ services:
   # The backend refuses to boot against any other revision.
   migrate:
     build: ./backend
-    image: morlana-backend
+    # Named after the compose project, so every contour builds its own tag:
+    # morlana-backend here and locally, morlana-dev-backend in /opt/morlana-dev
+    # with or without the dev overlay. A fixed name let a dev build re-tag the
+    # image production's containers are created from.
+    image: ${COMPOSE_PROJECT_NAME}-backend
     command: alembic upgrade head
     env_file:
       - .env
@@ -43,7 +47,7 @@ services:
 
   backend:
     build: ./backend
-    image: morlana-backend
+    image: ${COMPOSE_PROJECT_NAME}-backend
     ports:
       - "8000:8000"
     env_file:

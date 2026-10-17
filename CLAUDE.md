@@ -183,7 +183,7 @@ docker compose exec -T db rm -f /tmp/$name
 ### 12. Выкатить на сервер
 
 - Доступ: `ssh -i ~/.ssh/morlana_deploy yc-user@morlana.ru`. Виртуалка Yandex Cloud (`ru-central1-d`, 2 ядра с долей 20%, 4 ГБ, диск 40 ГБ, swap 2 ГБ); снаружи открыты только 22, 80 и 443.
-- Два контура на одной машине, разделены именем проекта Docker, а с ним и томами:
+- Два контура на одной машине, разделены именем проекта Docker, а с ним томами и образами: базовый файл называет образ `${COMPOSE_PROJECT_NAME}-backend`, поэтому каталог `/opt/morlana-dev` собирает `morlana-dev-backend` даже без оверлея. Фиксированное имя однажды позволило сборке дева перетегировать образ прода.
 
 | | Прод | Дев |
 | --- | --- | --- |
@@ -196,7 +196,10 @@ docker compose exec -T db rm -f /tmp/$name
 
 - Токены ботов у контуров разные, иначе `initData` не пройдёт проверку (инвариант 1). По той же причине дев нельзя открыть боевым ботом.
 - Наружу смотрит nginx хоста, контейнеры слушают только localhost. Конфиг — один шаблон `ops/nginx-morlana.conf`, он ставится дважды с заменой домена и порта. Сертификаты Let's Encrypt продлеваются таймером certbot.
-- Бэкап боевой базы — `/etc/cron.d/morlana-backup`, ежедневно в 04:15 UTC, 14 дней, в `/var/backups/morlana`. Скрипт не оставит файл, если дамп пустой или без заголовка `PGDMP`.
+- Бэкап боевой базы — `/etc/cron.d/morlana-backup`, ежедневно в 04:15 UTC, 14 дней, в `/var/backups/morlana`; `deploy.sh` снимает его же перед каждой миграцией. Скрипт не оставит файл, если дамп пустой или без заголовка `PGDMP`, любой сбой пишет строкой FAIL в `/var/log/morlana-backup.log`, а читать дампы может только root — в них вопросы людей о личной жизни.
+- `deploy.sh` делает всё, что может упасть, пока старый стек ещё работает: сборку, проверку импорта backend, дамп и миграцию (`run --rm --no-deps migrate`) — в таком порядке, чтобы между закоммиченной миграцией и переключением не стояло ничего, что может упасть. `up -d` — последний шаг: иначе `up` сначала остановит рабочий backend, а потом упадёт на миграции, и прод останется лежать. Что реально работает, помечает ссылка `refs/morlana/deployed` в клоне (у дева — своя); при сбое скрипт пишет, на каком коммите остался прод и можно ли запускать `compose up` руками.
+- Один воркер uvicorn: slowapi держит счётчики лимитов в памяти процесса, второй воркер удвоил бы лимит на `/auth/*`.
+- Всё, что на хосте живёт вне compose — deploy-хук certbot, catch-all сервер nginx, cron бэкапа, права на дампы, — ставит `ops/install-host.sh`; его можно перезапускать.
 
 Грабли, на которые уже наступили:
 
@@ -206,6 +209,8 @@ docker compose exec -T db rm -f /tmp/$name
 - `certbot certonly --webroot` не создаёт `options-ssl-nginx.conf` и `ssl-dhparams.pem`, поэтому TLS-настройки в шаблоне прописаны явно, а не включены через `include`.
 - Beget при регистрации домена и при создании подзоны сам вешает запись A на свою парковку `87.236.19.212`. Её надо удалить, а не добавить нашу рядом: две записи A на одно имя дают случайный результат.
 - Адрес мини-приложения в BotFather живёт в двух местах — **Menu Button** и **Configure Mini App**. Менять надо то, где стоит реальный адрес, иначе клиент продолжит открывать старый.
+- Скрипты, закоммиченные с Windows, теряют бит исполнения: там `core.filemode=false`, и `chmod +x` git не видит. Ставь его в индексе — `git update-index --chmod=+x ops/<файл>.sh` — и проверяй `git ls-files -s ops/`. Иначе на сервере скрипт падает с кодом 126, а ручной `chmod` там выглядит для git как локальное изменение и блокирует следующий `pull`.
+- Без deploy-хука certbot продлевает сертификаты на диске, а nginx до перезагрузки отдаёт старые из памяти — и в день их истечения оба домена перестают открываться. Хук ставит `ops/install-host.sh`.
 
 ## Карта кода
 
@@ -220,7 +225,7 @@ backend/prompts/           persona.md, spreads/*.json (расклады);  backe
 backend/tests/             conftest.py (стенд), helpers.py, test_*.py;  .github/workflows/ci.yml — CI
 frontend/src/              App.tsx, api/client.ts (типы API), hooks/useTelegram.ts, hooks/useReadingSession.ts (весь жизненный цикл расклада), components/, styles/
 frontend/nginx.conf        прокси /api на backend, SSE без буферизации, X-Forwarded-For для rate limiter
-ops/                       docker-compose.prod.yml и .dev.yml, nginx-morlana.conf (шаблон на оба контура), deploy.sh, deploy-dev.sh, backup.sh
+ops/                       docker-compose.prod.yml и .dev.yml, nginx-morlana.conf (шаблон vhost на оба контура) и install-nginx.sh, nginx-default.conf и certbot-reload-nginx.sh (ставит install-host.sh), deploy.sh, deploy-dev.sh, backup.sh
 docs/compose/, .mimocode/plans/   исторические планы, не источник истины
 ```
 

@@ -1,5 +1,5 @@
-# Production overrides. On the server the stack runs as:
-#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+# Production overrides, used by ops/deploy.sh as
+#   docker compose -f docker-compose.yml -f ops/docker-compose.prod.yml ...
 # Nothing here changes local development: the base file stays untouched.
 # `!override` replaces a list instead of appending to it (Compose v2.24+).
 
@@ -27,9 +27,9 @@ services:
     # Loopback only: reachable through the frontend container, plus from the host
     # for health checks. The host nginx is the single public entrance.
     ports: !override ["127.0.0.1:8000:8000"]
-    # Reading state lives in Redis, not in process memory, so workers share
-    # nothing and a second one is safe (CLAUDE.md, invariant on storage).
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --workers 2
+    # One worker, the Dockerfile's default. slowapi keeps its counters in each
+    # process's memory, so a second worker would double the limit on /auth/*,
+    # the only brake on password guessing. The load needs no more than one.
     restart: unless-stopped
     logging: *json_logging
 

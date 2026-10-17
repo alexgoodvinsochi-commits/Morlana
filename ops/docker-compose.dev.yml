@@ -4,9 +4,6 @@
 # visible from here, so the names inside (morlana_db, user) can stay as they are.
 #
 #   docker compose -p morlana-dev -f docker-compose.yml -f ops/docker-compose.dev.yml up -d --build
-#
-# One worker, unlike production: this contour serves one tester, and the memory
-# is better left to whichever build happens to be running.
 
 services:
   db:
@@ -23,16 +20,12 @@ services:
     restart: unless-stopped
     logging: *json_logging
 
-  # The base file names the backend image explicitly, and -p does not prefix an
-  # explicit name. Without these two lines a dev build re-tags morlana-backend,
-  # the image production's containers are created from: the next time production
-  # recreates them, it would run whatever branch is on dev, migrations included.
+  # Image names need nothing here: the base file derives them from the project
+  # name, which is morlana-dev for this contour.
   migrate:
-    image: morlana-dev-backend
     logging: *json_logging
 
   backend:
-    image: morlana-dev-backend
     ports: !override ["127.0.0.1:8001:8000"]
     restart: unless-stopped
     logging: *json_logging

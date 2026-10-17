@@ -174,11 +174,13 @@ Let's Encrypt продлеваются таймером certbot.
 
 | Файл | Назначение |
 | --- | --- |
-| `docker-compose.prod.yml` | боевой оверлей: порты на loopback, два воркера uvicorn, ротация логов |
+| `docker-compose.prod.yml` | боевой оверлей: порты на loopback, ротация логов, перезапуск при сбое |
 | `docker-compose.dev.yml` | то же для тестового контура, порты 3001 и 8001 |
 | `nginx-morlana.conf` | шаблон vhost: TLS, SSE без буферизации, проброс адреса клиента |
-| `deploy.sh`, `deploy-dev.sh` | выкатка |
+| `deploy.sh`, `deploy-dev.sh` | выкатка; прод — со свежим дампом и миграцией до переключения |
 | `backup.sh` | ежедневный дамп |
+| `install-nginx.sh` | ставит vhost контура из шаблона, при неудачном `nginx -t` откатывает |
+| `install-host.sh` | всё на хосте вне compose: deploy-хук certbot, catch-all сервер nginx, cron бэкапа, права на дампы |
 
 ## API Endpoints
 
